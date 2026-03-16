@@ -26,6 +26,11 @@ func NewRouter(br *router.BaseRouter, service *Service, manageService *ManageSer
 }
 
 func (r *Router) AddRoutes() {
+	// Public routes (no auth required)
+	uPublic := r.br.Router.Group("/user")
+	uPublic.GET("/public/:pubUserId/:pubUsername", r.GetUserPublicInfo)
+
+	// Authenticated routes
 	u := r.br.Router.Group("/user").Use(authmiddleware.AuthRequired(r.br.DB, r.br.Cfg))
 
 	// Get current user info
@@ -36,8 +41,6 @@ func (r *Router) AddRoutes() {
 	u.GET("/settings", r.GetSettings)
 	// Search users
 	u.GET("/search", r.GetSearchUsers)
-	// Get user public info
-	u.GET("/public/:pubUserId/:pubUsername", r.GetUserPublicInfo)
 	// Update bio
 	u.POST("/bio", r.UpdateBio)
 	// Upload avatar

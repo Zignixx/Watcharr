@@ -16,12 +16,19 @@ axios.interceptors.request.use(
 			// Only want to set auth header if requesting to our backend.
 			const token = localStorage.getItem("token");
 			// Don't require token check if going to auth route (login/register)
-			if (!token && !config.url?.includes("/auth")) {
+			// or public routes accessible by guests (shared lists)
+			const isPublicRoute =
+				config.url?.includes("/auth") ||
+				config.url?.match(/^\/watched\/\d+\//) ||
+				config.url?.match(/^\/user\/public\//);
+			if (!token && !isPublicRoute) {
 				console.error("No token, going to login. Endpoint:", config.url);
 				goto("/login?again=1");
 				throw new axios.Cancel("No auth token found");
 			}
-			config.headers.set("Authorization", token);
+			if (token) {
+				config.headers.set("Authorization", token);
+			}
 		}
 
 		return config;

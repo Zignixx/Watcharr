@@ -329,3 +329,18 @@ export async function unfollowUser(id: number) {
 export const noAuthAxios = axios.create({
 	baseURL: baseURL,
 });
+
+/**
+ * For use with public routes that optionally include auth if available.
+ * Does not redirect to login when no token is present.
+ */
+export const publicAxios = axios.create({
+	baseURL: baseURL,
+});
+publicAxios.interceptors.request.use((config) => {
+	const token = localStorage.getItem("token");
+	if (token) {
+		config.headers.set("Authorization", token);
+	}
+	return config;
+});

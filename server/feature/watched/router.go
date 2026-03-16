@@ -33,10 +33,14 @@ func NewRouter(
 }
 
 func (r *Router) AddRoutes() {
+	// Public routes (no auth required)
+	watchedPublic := r.br.Router.Group("/watched")
+	watchedPublic.GET(":id/:username", router.PaginatedRequest(true), r.GetPublicWatchedList)
+
+	// Authenticated routes
 	watched := r.br.Router.Group("/watched").Use(authmiddleware.AuthRequired(nil, r.br.Cfg))
 
 	watched.GET("", router.PaginatedRequest(false), r.GetWatchedList)
-	watched.GET(":id/:username", router.PaginatedRequest(true), r.GetPublicWatchedList)
 	watched.POST("", r.AddWatched)
 	watched.PUT(":id", r.UpdateWatched)
 	watched.DELETE(":id", r.DeleteWatched)

@@ -100,6 +100,8 @@
 		);
 	}
 
+	let isLoggedIn = $state(!!localStorage.getItem("token"));
+
 	async function getInitialData() {
 		if (localStorage.getItem("token")) {
 			const [u, s, f, fo, ts] = await Promise.all([
@@ -124,7 +126,7 @@
 			if (ts?.data) {
 				store.tags = ts.data;
 			}
-		} else {
+		} else if (!window.location.pathname.startsWith("/lists/")) {
 			goto("/login?again=1");
 		}
 	}
@@ -233,19 +235,23 @@
 			<span class="large">Watcharr</span>
 			<span class="small">W</span>
 		</a>
-		<div class="search">
-			<input
-				bind:this={mainSearchEl}
-				type="text"
-				placeholder="Search"
-				bind:value={store.searchQuery}
-				onkeydown={handleSearch}
-			/>
-			<Icon i="search" wh={19} />
-		</div>
+		{#if isLoggedIn}
+			<div class="search">
+				<input
+					bind:this={mainSearchEl}
+					type="text"
+					placeholder="Search"
+					bind:value={store.searchQuery}
+					onkeydown={handleSearch}
+				/>
+				<Icon i="search" wh={19} />
+			</div>
+		{:else}
+			<div class="search"></div>
+		{/if}
 		<div class="btns">
-			<!-- Detailed posters only supported on own watched list currently -->
-			{#if page.url?.pathname === "/" || page.url?.pathname.startsWith("/search")}
+			<!-- Detailed posters -->
+			{#if page.url?.pathname === "/" || page.url?.pathname.startsWith("/search") || page.url?.pathname.includes("/lists/")}
 				<button
 					class="plain other detailedView"
 					onclick={() => {
@@ -307,62 +313,66 @@
 					<FilterMenu />
 				{/if}
 			{/if}
-			<button
-				class="plain other tag"
-				onclick={() => {
-					closeAllSubMenus("tag");
-					tagMenuShown = !tagMenuShown;
-				}}
-				use:tooltip={{ text: "Tags", pos: "bot", condition: !tagMenuShown }}
-			>
-				<Icon i="tag" />
-			</button>
-			{#if tagMenuShown}
-				<TagMenu
-					onTagClick={(tag) => {
-						goto(`/tag/${tag.id}`);
-						tagMenuShown = false;
+			{#if isLoggedIn}
+				<button
+					class="plain other tag"
+					onclick={() => {
+						closeAllSubMenus("tag");
+						tagMenuShown = !tagMenuShown;
 					}}
-					showManageBtn={true}
-				/>
-			{/if}
-			<button
-				class="plain other discover"
-				onclick={() => goto("/discover")}
-				use:tooltip={{ text: "Discover", pos: "bot" }}
-			>
-				<Icon i="compass" wh={26} />
-			</button>
-			<button
-				class="plain other following"
-				onclick={() => {
-					closeAllSubMenus("following");
-					followingMenuShown = !followingMenuShown;
-				}}
-				use:tooltip={{
-					text: "Following",
-					pos: "bot",
-					condition: !followingMenuShown,
-				}}
-			>
-				<Icon i="people" wh={26} />
-			</button>
-			{#if followingMenuShown}
-				<FollowingMenu close={() => (followingMenuShown = false)} />
-			{/if}
-			<button class="plain face" onclick={handleProfileClick}>:)</button>
-			{#if subMenuShown}
-				<FaceMenu />
+					use:tooltip={{ text: "Tags", pos: "bot", condition: !tagMenuShown }}
+				>
+					<Icon i="tag" />
+				</button>
+				{#if tagMenuShown}
+					<TagMenu
+						onTagClick={(tag) => {
+							goto(`/tag/${tag.id}`);
+							tagMenuShown = false;
+						}}
+						showManageBtn={true}
+					/>
+				{/if}
+				<button
+					class="plain other discover"
+					onclick={() => goto("/discover")}
+					use:tooltip={{ text: "Discover", pos: "bot" }}
+				>
+					<Icon i="compass" wh={26} />
+				</button>
+				<button
+					class="plain other following"
+					onclick={() => {
+						closeAllSubMenus("following");
+						followingMenuShown = !followingMenuShown;
+					}}
+					use:tooltip={{
+						text: "Following",
+						pos: "bot",
+						condition: !followingMenuShown,
+					}}
+				>
+					<Icon i="people" wh={26} />
+				</button>
+				{#if followingMenuShown}
+					<FollowingMenu close={() => (followingMenuShown = false)} />
+				{/if}
+				<button class="plain face" onclick={handleProfileClick}>:)</button>
+				{#if subMenuShown}
+					<FaceMenu />
+				{/if}
 			{/if}
 		</div>
 	</div>
-	<input
-		class="small"
-		type="text"
-		placeholder="Search"
-		bind:value={store.searchQuery}
-		onkeydown={handleSearch}
-	/>
+	{#if isLoggedIn}
+		<input
+			class="small"
+			type="text"
+			placeholder="Search"
+			bind:value={store.searchQuery}
+			onkeydown={handleSearch}
+		/>
+	{/if}
 </nav>
 
 {#await getInitialData()}

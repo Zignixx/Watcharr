@@ -6,8 +6,9 @@
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
 	import type { Media, PublicUser } from "@/types.js";
-	import axios, { type GenericAbortSignal } from "axios";
-	import { onDestroy, onMount, untrack } from "svelte";
+	import { type GenericAbortSignal } from "axios";
+	import { publicAxios } from "@/lib/util/api.js";
+	import { onDestroy, untrack } from "svelte";
 	import paginatedLoader, {
 		PaginatedLoaderRunFnAction,
 	} from "@/lib/util/paginatedLoader.svelte.js";
@@ -25,6 +26,7 @@
 		};
 	});
 
+	let isLoggedIn = $derived(!!localStorage.getItem("token"));
 	let followBtnDisabled = $state(false);
 	let user: PublicUser | undefined = $state();
 
@@ -53,7 +55,7 @@
 			console.warn("load: Missing id or username!");
 			return;
 		}
-		const r = await axios.get(`/watched/${meta.id}/${meta.username}`, {
+		const r = await publicAxios.get(`/watched/${meta.id}/${meta.username}`, {
 			params: nextLoadParams,
 			signal,
 		});
@@ -62,7 +64,6 @@
 	}
 
 	async function onScrollToBottom() {
-		// If an error is being shown, no more infinite scroll.
 		if (dataLoader.state.reqLoadError) {
 			return;
 		}
@@ -70,16 +71,9 @@
 		dataLoader.runFn();
 	}
 
-	// NOTE: This effect also handles initial load of data.
 	$effect(() => {
-		// When our sort/filter query params change,
-		// load our list again.
-		// Since it exists at load, this performs our
-		// initial load of data too.
 		if (store.sortAndFiltersForQueryParams) {
 			untrack(() => {
-				// We don't want to trigger another re-run of this
-				// effect when state inside these funcs changes.
 				dataLoader.reset();
 				dataLoader.runFn();
 			});
@@ -87,7 +81,7 @@
 	});
 
 	async function getPublicUser() {
-		return (await axios.get(`/user/public/${meta.id}/${meta.username}`))
+		return (await publicAxios.get(`/user/public/${meta.id}/${meta.username}`))
 			.data as PublicUser;
 	}
 
@@ -117,11 +111,6 @@
 
 	afterNavigate((e) => {
 		if (!e.from?.route?.id?.toLowerCase()?.includes("/lists")) {
-			// Ensure afterNavigate can only runFn when we are coming
-			// from another list page.
-			// OnMount of a list page we don't want to have this also run
-			// because that breaks our loader and our effect will handle loading
-			// in that case already.
 			return;
 		}
 		console.log("afterNavigate.");
@@ -148,14 +137,16 @@
 				<h2 title={user?.username}>
 					{meta.username}
 				</h2>
-				<button
-					class="plain"
-					disabled={followBtnDisabled}
-					onclick={follow}
-					use:tooltip={{ text: isFollowing ? "Unfollow" : "Follow" }}
-				>
-					<Icon i={isFollowing ? "person-minus" : "person-add"} />
-				</button>
+				{#if isLoggedIn}
+					<button
+						class="plain"
+						disabled={followBtnDisabled}
+						onclick={follow}
+						use:tooltip={{ text: isFollowing ? "Unfollow" : "Follow" }}
+					>
+						<Icon i={isFollowing ? "person-minus" : "person-add"} />
+					</button>
+				{/if}
 			</div>
 			{#if user?.bio}
 				<span title={user?.bio}>{user?.bio}</span>
