@@ -467,33 +467,20 @@
 		aspect-ratio: 170000/256367;
 		transition: transform 150ms ease;
 
-		&.status-planned::after,
-		&.status-watching::after,
-		&.status-finished::after,
-		&.status-hold::after,
-		&.status-dropped::after {
-			content: "";
-			position: absolute;
-			inset: 0;
-			border-radius: 5px;
-			pointer-events: none;
-			z-index: 1;
+		&.status-planned {
+			border: 2px solid rgba(100, 149, 237, 0.5);
 		}
-
-		&.status-planned::after {
-			background: radial-gradient(ellipse at 100% 100%, rgba(100, 149, 237, 0.35) 0%, rgba(100, 149, 237, 0.1) 35%, transparent 60%);
+		&.status-watching {
+			border: 2px solid rgba(255, 193, 7, 0.45);
 		}
-		&.status-watching::after {
-			background: radial-gradient(ellipse at 100% 100%, rgba(255, 193, 7, 0.3) 0%, rgba(255, 193, 7, 0.08) 35%, transparent 60%);
+		&.status-finished {
+			border: 2px solid rgba(76, 175, 80, 0.45);
 		}
-		&.status-finished::after {
-			background: radial-gradient(ellipse at 100% 100%, rgba(76, 175, 80, 0.3) 0%, rgba(76, 175, 80, 0.08) 35%, transparent 60%);
+		&.status-hold {
+			border: 2px solid rgba(255, 152, 0, 0.45);
 		}
-		&.status-hold::after {
-			background: radial-gradient(ellipse at 100% 100%, rgba(255, 152, 0, 0.3) 0%, rgba(255, 152, 0, 0.08) 35%, transparent 60%);
-		}
-		&.status-dropped::after {
-			background: radial-gradient(ellipse at 100% 100%, rgba(244, 67, 54, 0.3) 0%, rgba(244, 67, 54, 0.08) 35%, transparent 60%);
+		&.status-dropped {
+			border: 2px solid rgba(244, 67, 54, 0.45);
 		}
 
 		&.fluid-size {

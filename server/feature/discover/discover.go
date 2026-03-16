@@ -2,16 +2,22 @@ package discover
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"time"
 
+	gocache "github.com/robfig/go-cache"
 	"github.com/sbondCo/Watcharr/config"
 	"github.com/sbondCo/Watcharr/database/entity"
 	"github.com/sbondCo/Watcharr/domain"
 	"github.com/sbondCo/Watcharr/media/tmdb"
 	"gorm.io/gorm"
 )
+
+// In-memory cache for computed recommendation lists (per user + content type).
+var recCache = gocache.New(time.Hour, time.Minute*5)
 
 type ContentProvider interface {
 	Trending(t tmdb.TrendingType, pageNum int, region string) (tmdb.TMDBTrendingCombined, error)
@@ -403,32 +409,84 @@ func (s *Service) discoverGameUpcoming(
 // Discover recommended content based on user's watched list.
 // Uses all watched items (excluding DROPPED), weighted by user rating.
 // Recommendations that appear from multiple sources score higher.
+// Results are cached per user+contentType for 1 hour and paginated.
 // contentType: "movie", "tv", or "" for both.
 func (s *Service) discoverRecommended(
 	contentType string,
 	meta domain.DiscoverRequestMeta,
 	resp *domain.DiscoverResponse,
 ) error {
+	cacheKey := fmt.Sprintf("recommendations_%d_%s", meta.UserID, contentType)
+
+	// Try to get cached results
+	var allResults []domain.Media
+	if cached, found := recCache.Get(cacheKey); found {
+		allResults = cached.([]domain.Media)
+		slog.Debug("discoverRecommended: Serving from cache", "user", meta.UserID, "contentType", contentType, "total", len(allResults))
+	} else {
+		// Compute recommendations from scratch
+		var err error
+		allResults, err = s.computeRecommendations(contentType, meta.UserID)
+		if err != nil {
+			return err
+		}
+		// Cache for 1 hour
+		recCache.Set(cacheKey, allResults, time.Hour)
+		slog.Debug("discoverRecommended: Computed and cached", "user", meta.UserID, "contentType", contentType, "total", len(allResults))
+	}
+
+	// Paginate
+	total := len(allResults)
+	limit := meta.PageParams.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	page := meta.PageParams.Page
+	if page <= 0 {
+		page = 1
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	start := (page - 1) * limit
+	end := start + limit
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	resp.Results = allResults[start:end]
+	resp.Page = page
+	resp.Limit = limit
+	resp.TotalPages = totalPages
+	resp.TotalResults = int64(total)
+	return nil
+}
+
+// computeRecommendations does the heavy lifting: fetches watched list,
+// calls TMDB for recommendations, scores and sorts them.
+func (s *Service) computeRecommendations(contentType string, userID uint) ([]domain.Media, error) {
 	// Get user's watched items with content loaded
 	var watched []entity.Watched
 	res := s.db.Model(&entity.Watched{}).
 		Preload("Content").
-		Where("user_id = ? AND content_id IS NOT NULL", meta.UserID).
+		Where("user_id = ? AND content_id IS NOT NULL", userID).
 		Find(&watched)
 	if res.Error != nil {
-		slog.Error("discoverRecommended: Failed to get watched!", "error", res.Error)
-		return errors.New("failed to get watched list")
+		slog.Error("computeRecommendations: Failed to get watched!", "error", res.Error)
+		return nil, errors.New("failed to get watched list")
 	}
 
 	if len(watched) == 0 {
-		resp.Page = 1
-		resp.TotalPages = 1
-		resp.TotalResults = 0
-		return nil
+		return nil, nil
 	}
 
 	// Build source items: tmdbId -> weight, filtered by content type, excluding DROPPED.
-	// Weight = user rating (0-10 scale). Unrated items get a default weight of 5.0.
 	type sourceItem struct {
 		tmdbId      int
 		contentType entity.ContentType
@@ -444,12 +502,10 @@ func (s *Service) discoverRecommended(
 		}
 		watchedSet[w.Content.TmdbID] = true
 
-		// Skip dropped items
 		if w.Status == entity.DROPPED {
 			continue
 		}
 
-		// Filter by content type
 		if contentType == "movie" && w.Content.Type != entity.MOVIE {
 			continue
 		}
@@ -462,7 +518,7 @@ func (s *Service) discoverRecommended(
 
 		weight := w.Rating
 		if weight <= 0 {
-			weight = 5.0 // Default weight for unrated items
+			weight = 5.0
 		}
 
 		sources = append(sources, sourceItem{
@@ -474,27 +530,18 @@ func (s *Service) discoverRecommended(
 	}
 
 	if len(sources) == 0 {
-		resp.Page = 1
-		resp.TotalPages = 1
-		resp.TotalResults = 0
-		return nil
+		return nil, nil
 	}
 
-	// Sort by weight descending so highest rated items are processed first
 	sort.Slice(sources, func(i, j int) bool {
 		return sources[i].weight > sources[j].weight
 	})
 
-	// Limit to top 50 source items to keep API calls reasonable
 	maxSources := 50
 	if len(sources) > maxSources {
 		sources = sources[:maxSources]
 	}
 
-	// Fetch recommendations for each source and score them.
-	// Score = sum of source weights that recommended the item.
-	// This naturally handles: high-rated sources contribute more,
-	// items recommended by multiple sources accumulate score.
 	type recSource struct {
 		name   string
 		weight float64
@@ -502,7 +549,7 @@ func (s *Service) discoverRecommended(
 	type scoredRec struct {
 		media      domain.Media
 		score      float64
-		sources    int // how many source items recommended this
+		sources    int
 		recSources []recSource
 	}
 	recScores := make(map[int]*scoredRec)
@@ -512,7 +559,7 @@ func (s *Service) discoverRecommended(
 		case entity.MOVIE:
 			tmdbRes, err := s.contentProvider.MovieRecommendations(src.tmdbId, 1)
 			if err != nil {
-				slog.Warn("discoverRecommended: Failed to get movie recs",
+				slog.Warn("computeRecommendations: Failed to get movie recs",
 					"tmdbId", src.tmdbId, "error", err)
 				continue
 			}
@@ -537,7 +584,7 @@ func (s *Service) discoverRecommended(
 		case entity.SHOW:
 			tmdbRes, err := s.contentProvider.ShowRecommendations(src.tmdbId, 1)
 			if err != nil {
-				slog.Warn("discoverRecommended: Failed to get show recs",
+				slog.Warn("computeRecommendations: Failed to get show recs",
 					"tmdbId", src.tmdbId, "error", err)
 				continue
 			}
@@ -571,11 +618,11 @@ func (s *Service) discoverRecommended(
 		if results[i].score != results[j].score {
 			return results[i].score > results[j].score
 		}
-		// Tie-breaker: more sources = better
 		return results[i].sources > results[j].sources
 	})
 
-	// Build final response
+	// Build final media list with RecommendedBy populated
+	allMedia := make([]domain.Media, 0, len(results))
 	for _, rec := range results {
 		m := rec.media
 		for _, rs := range rec.recSources {
@@ -585,11 +632,8 @@ func (s *Service) discoverRecommended(
 			}
 			m.RecommendedBy = append(m.RecommendedBy, domain.RecommendationSource{Name: rs.name, Weight: pct})
 		}
-		resp.Results = append(resp.Results, m)
+		allMedia = append(allMedia, m)
 	}
 
-	resp.Page = 1
-	resp.TotalPages = 1
-	resp.TotalResults = int64(len(resp.Results))
-	return nil
+	return allMedia, nil
 }
