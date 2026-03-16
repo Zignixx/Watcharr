@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: watcharr2
     ports:
-      - 3080:3080
+      - 3081:3080
     volumes:
       - watcharr_data1:/data
     restart: unless-stopped
