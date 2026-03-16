@@ -70,6 +70,7 @@ export type Icon =
 export type Theme = "light" | "dark" | "system";
 
 export type WLDetailedViewOption =
+	| "title"
 	| "statusRating"
 	| "lastWatched"
 	| "dateAdded"

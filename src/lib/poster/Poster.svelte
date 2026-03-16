@@ -352,7 +352,7 @@
 		{/if}
 		{#if watched && meta && !posterActive}
 			<!-- Must be on watched list, and poster not hovered -->
-			<ExtraDetails {...buildExtraDetails(meta.type, watched)} />
+			<ExtraDetails {...buildExtraDetails(meta.type, watched, media.name)} />
 		{/if}
 		<div
 			onclick={(e) => {

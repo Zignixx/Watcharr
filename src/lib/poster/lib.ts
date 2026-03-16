@@ -1,6 +1,7 @@
 import type { SupportedMedia, Watched, WatchedStatus } from "@/types";
 
 export type PosterExtraDetails = {
+	title?: string;
 	rating: number | undefined;
 	status: WatchedStatus | undefined;
 	dateAdded?: string;
@@ -14,8 +15,10 @@ export type PosterExtraDetails = {
 export function buildExtraDetails(
 	t: SupportedMedia | undefined,
 	w: Watched,
+	name?: string,
 ): PosterExtraDetails {
 	const obj = {
+		title: name,
 		rating: w.rating,
 		status: w.status,
 		dateAdded: w.createdAt,

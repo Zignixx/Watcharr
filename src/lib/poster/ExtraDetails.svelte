@@ -13,6 +13,7 @@
 	import type { PosterExtraDetails } from "./lib";
 
 	let {
+		title,
 		rating,
 		status,
 		dateAdded,
@@ -46,7 +47,11 @@
       OR when :empty tag is updated in browsers to new spec and counts whitespace as empty.
     -->
 		<div>
-			{#if dateAdded && store.wlDetailedView.includes("dateAdded")}
+			{#if title && store.wlDetailedView.includes("title")}
+				<span class="title-detail" title={title}>
+					<span>{title}</span>
+				</span>
+			{/if}{#if dateAdded && store.wlDetailedView.includes("dateAdded")}
 				<span title="Date added to watch list">
 					<i><Icon i="calendar" /></i>
 					<span>
@@ -129,6 +134,21 @@
 				gap: 8px;
 				height: 15px;
 				font-weight: bold;
+
+				&.title-detail {
+					height: auto;
+					justify-content: center;
+					text-align: center;
+
+					span {
+						overflow: hidden;
+						text-overflow: ellipsis;
+						display: -webkit-box;
+						-webkit-line-clamp: 2;
+						-webkit-box-orient: vertical;
+						line-height: 1.2;
+					}
+				}
 
 				&.status-rating {
 					gap: 10px;

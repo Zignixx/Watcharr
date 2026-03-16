@@ -23,6 +23,12 @@
 >
 	<h4 class="norm sm-caps">Shown Details</h4>
 	<button
+		class={`plain ${store.wlDetailedView?.includes("title") ? "on" : ""}`}
+		onclick={() => detailClicked("title")}
+	>
+		Title
+	</button>
+	<button
 		class={`plain ${store.wlDetailedView?.includes("statusRating") ? "on" : ""}`}
 		onclick={() => detailClicked("statusRating")}
 	>
