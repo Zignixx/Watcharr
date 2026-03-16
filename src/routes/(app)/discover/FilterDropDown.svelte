@@ -37,6 +37,10 @@
 			id: DiscoverFilter.streaming,
 			value: "Streaming",
 		},
+		recommended: {
+			id: DiscoverFilter.recommended,
+			value: "Recommended",
+		},
 		// advanced: {
 		// 	id: "advanced",
 		// 	value: "Advanced Search",
@@ -46,15 +50,19 @@
 	let options = $derived.by(() => {
 		let o: DropDownItem[] = [dropDownOptions.trending];
 		switch (discoverType) {
+			case SearchType.multi:
+				o.push(dropDownOptions.recommended);
+				break;
 			case SearchType.movie:
 				o.push(
 					dropDownOptions.popular,
 					dropDownOptions.upcoming,
 					dropDownOptions.intheatres,
+					dropDownOptions.recommended,
 				);
 				break;
 			case SearchType.show:
-				o.push(dropDownOptions.popular, dropDownOptions.upcoming);
+				o.push(dropDownOptions.popular, dropDownOptions.upcoming, dropDownOptions.recommended);
 				break;
 			case SearchType.person:
 				o.push(dropDownOptions.popular);
@@ -66,7 +74,7 @@
 		// o.push(dropDownOptions.advanced);
 		return o;
 	});
-	let onMultiDiscover = $derived(discoverType === SearchType.multi);
+	let onMultiDiscover = false;
 </script>
 
 <div

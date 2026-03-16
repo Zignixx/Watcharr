@@ -641,6 +641,46 @@ func (s *Service) PopularPeople(pageNum int) (tmdb.TMDBPopularPeople, error) {
 	return *resp, nil
 }
 
+func (s *Service) MovieRecommendations(tmdbId int, pageNum int) (tmdb.TMDBMovieSimilar, error) {
+	resp := new(tmdb.TMDBMovieSimilar)
+	cacheKey := cache.CreateCacheKey("MovieRecommendations", tmdbId, pageNum)
+	if cache.GetCache(ContentStore, cacheKey, &resp) {
+		slog.Debug("MovieRecommendations: Returning cache.")
+		return *resp, nil
+	}
+	err := s.tmdb.Request(
+		fmt.Sprintf("/movie/%d/recommendations", tmdbId),
+		map[string]string{"page": strconv.Itoa(pageNum)},
+		&resp,
+	)
+	if err != nil {
+		slog.Error("MovieRecommendations: Failed!", "tmdbId", tmdbId, "error", err)
+		return tmdb.TMDBMovieSimilar{}, errors.New("failed to get movie recommendations")
+	}
+	ContentStore.Set(cacheKey, resp, time.Hour*24)
+	return *resp, nil
+}
+
+func (s *Service) ShowRecommendations(tmdbId int, pageNum int) (tmdb.TMDBShowSimilar, error) {
+	resp := new(tmdb.TMDBShowSimilar)
+	cacheKey := cache.CreateCacheKey("ShowRecommendations", tmdbId, pageNum)
+	if cache.GetCache(ContentStore, cacheKey, &resp) {
+		slog.Debug("ShowRecommendations: Returning cache.")
+		return *resp, nil
+	}
+	err := s.tmdb.Request(
+		fmt.Sprintf("/tv/%d/recommendations", tmdbId),
+		map[string]string{"page": strconv.Itoa(pageNum)},
+		&resp,
+	)
+	if err != nil {
+		slog.Error("ShowRecommendations: Failed!", "tmdbId", tmdbId, "error", err)
+		return tmdb.TMDBShowSimilar{}, errors.New("failed to get show recommendations")
+	}
+	ContentStore.Set(cacheKey, resp, time.Hour*24)
+	return *resp, nil
+}
+
 func (s *Service) Regions() (tmdb.TMDBRegions, error) {
 	resp := new(tmdb.TMDBRegions)
 	err := s.tmdb.Request("/watch/providers/regions", map[string]string{}, &resp)

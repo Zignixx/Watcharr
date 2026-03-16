@@ -68,6 +68,7 @@ func (r *Router) GetDiscover(c *gin.Context) {
 	resp, err := r.service.Discover(req, domain.DiscoverRequestMeta{
 		PageParams: pp,
 		Region:     c.MustGet("userCountry").(string),
+		UserID:     userId,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: err.Error()})

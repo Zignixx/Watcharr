@@ -18,6 +18,8 @@ const (
 	DiscoverFilterStreaming DiscoverFilter = "streaming"
 	// What's in theatres (movies).
 	DiscoverFilterInTheatres DiscoverFilter = "intheatres"
+	// Recommended based on user's watched list.
+	DiscoverFilterRecommended DiscoverFilter = "recommended"
 )
 
 type DiscoverRequest struct {
@@ -35,6 +37,7 @@ type DiscoverRequest struct {
 type DiscoverRequestMeta struct {
 	PageParams util.PaginationParams
 	Region     string
+	UserID     uint
 }
 
 type DiscoverResponse struct {
@@ -49,7 +52,8 @@ var ValidDiscoverFilter validator.Func = func(fl validator.FieldLevel) bool {
 			DiscoverFilterPopular,
 			DiscoverFilterUpcoming,
 			DiscoverFilterStreaming,
-			DiscoverFilterInTheatres:
+			DiscoverFilterInTheatres,
+			DiscoverFilterRecommended:
 			return true
 		}
 	}

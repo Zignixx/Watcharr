@@ -29,6 +29,12 @@
 		Title
 	</button>
 	<button
+		class={`plain ${store.wlDetailedView?.includes("statusColor") ? "on" : ""}`}
+		onclick={() => detailClicked("statusColor")}
+	>
+		Status Color
+	</button>
+	<button
 		class={`plain ${store.wlDetailedView?.includes("statusRating") ? "on" : ""}`}
 		onclick={() => detailClicked("statusRating")}
 	>

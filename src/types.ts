@@ -71,6 +71,7 @@ export type Theme = "light" | "dark" | "system";
 
 export type WLDetailedViewOption =
 	| "title"
+	| "statusColor"
 	| "statusRating"
 	| "lastWatched"
 	| "dateAdded"
@@ -331,6 +332,12 @@ export interface Media {
 	gameModes?: MediaGenre[];
 	seasons?: MediaSeason[];
 	isShowAnime?: boolean;
+	recommendedBy?: RecommendationSource[];
+}
+
+export interface RecommendationSource {
+	name: string;
+	weight: number;
 }
 
 export function getContentTypeFromMedia(m: Media): ContentType | undefined {
@@ -404,6 +411,7 @@ export enum DiscoverFilter {
 	upcoming = "upcoming",
 	streaming = "streaming",
 	inTheatres = "intheatres",
+	recommended = "recommended",
 }
 
 export type DiscoverFilterOption = `${DiscoverFilter}`;

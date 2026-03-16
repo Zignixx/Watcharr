@@ -85,6 +85,19 @@ type Media struct {
 
 	// Game modes.
 	GameModes []MediaGenre `json:"gameModes,omitempty"`
+
+	//
+	// Properties only for recommendations.
+	//
+
+	// Which watched items caused this recommendation.
+	RecommendedBy []RecommendationSource `json:"recommendedBy,omitempty"`
+}
+
+// RecommendationSource describes a watched item that contributed to a recommendation.
+type RecommendationSource struct {
+	Name   string  `json:"name"`
+	Weight float64 `json:"weight"`
 }
 
 func (t Media) GetId() int {

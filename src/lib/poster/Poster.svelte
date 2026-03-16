@@ -15,6 +15,7 @@
 	import { baseURL, removeWatched, updateWatched } from "../util/api";
 	import { notify } from "../util/notify";
 	import { onMount } from "svelte";
+	import { store } from "@/store.svelte";
 	import PosterStatus from "./PosterStatus.svelte";
 	import PosterRating from "./PosterRating.svelte";
 	import ExtraDetails from "./ExtraDetails.svelte";
@@ -143,6 +144,7 @@
 	const year = $derived(
 		media.releaseDate ? new Date(media.releaseDate).getFullYear() : undefined,
 	);
+
 
 	function updateWatchedVar(w: Watched | undefined) {
 		watched = w;
@@ -320,7 +322,7 @@
 	class:just-deleted={justDeletedFromWatcheds}
 >
 	<div
-		class={`container${!poster || posterImgLoaded == -1 ? " details-shown" : ""}`}
+		class={`container${!poster || posterImgLoaded == -1 ? " details-shown" : ""}${store.wlDetailedView?.includes("statusColor") && watched?.status ? " status-" + watched.status.toLowerCase() : ""}`}
 		bind:this={containerEl}
 	>
 		{#if poster}
@@ -378,6 +380,14 @@
 					{/if}
 				</h2>
 				<span>{media.summary}</span>
+				{#if media.recommendedBy?.length}
+					<div class="recommended-by">
+						<strong>Recommended because of:</strong>
+						{#each media.recommendedBy as src}
+							<span>• {src.name} <em>({Math.round(src.weight)}%)</em></span>
+						{/each}
+					</div>
+				{/if}
 			</a>
 
 			{#if !hideButtons}
@@ -456,6 +466,35 @@
 		position: relative;
 		aspect-ratio: 170000/256367;
 		transition: transform 150ms ease;
+
+		&.status-planned::after,
+		&.status-watching::after,
+		&.status-finished::after,
+		&.status-hold::after,
+		&.status-dropped::after {
+			content: "";
+			position: absolute;
+			inset: 0;
+			border-radius: 5px;
+			pointer-events: none;
+			z-index: 1;
+		}
+
+		&.status-planned::after {
+			background: radial-gradient(ellipse at 100% 100%, rgba(100, 149, 237, 0.35) 0%, rgba(100, 149, 237, 0.1) 35%, transparent 60%);
+		}
+		&.status-watching::after {
+			background: radial-gradient(ellipse at 100% 100%, rgba(255, 193, 7, 0.3) 0%, rgba(255, 193, 7, 0.08) 35%, transparent 60%);
+		}
+		&.status-finished::after {
+			background: radial-gradient(ellipse at 100% 100%, rgba(76, 175, 80, 0.3) 0%, rgba(76, 175, 80, 0.08) 35%, transparent 60%);
+		}
+		&.status-hold::after {
+			background: radial-gradient(ellipse at 100% 100%, rgba(255, 152, 0, 0.3) 0%, rgba(255, 152, 0, 0.08) 35%, transparent 60%);
+		}
+		&.status-dropped::after {
+			background: radial-gradient(ellipse at 100% 100%, rgba(244, 67, 54, 0.3) 0%, rgba(244, 67, 54, 0.08) 35%, transparent 60%);
+		}
 
 		&.fluid-size {
 			height: 100%;
@@ -544,6 +583,32 @@
 				margin-top: auto;
 				gap: 10px;
 				height: 35px;
+			}
+
+			.recommended-by {
+				display: flex;
+				flex-direction: column;
+				margin-top: 6px;
+				font-size: 8px;
+				color: rgba(255, 255, 255, 0.85);
+				line-height: 1.3;
+
+				strong {
+					font-size: 8.5px;
+					margin-bottom: 2px;
+				}
+
+				span {
+					display: block;
+					margin: 0;
+					font-size: 8px;
+					-webkit-line-clamp: unset;
+
+					em {
+						font-style: normal;
+						color: rgba(255, 255, 255, 0.5);
+					}
+				}
 			}
 		}
 
