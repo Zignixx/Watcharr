@@ -88,6 +88,15 @@ func (s *Service) GetFollows(userId uint) ([]FollowPublic, error) {
 	return fpub, nil
 }
 
+// IsFollowing checks whether currentUserId follows targetUserId.
+func (s *Service) IsFollowing(currentUserId uint, targetUserId uint) bool {
+	var count int64
+	s.db.Model(&entity.Follow{}).
+		Where("user_id = ? AND followed_user_id = ?", currentUserId, targetUserId).
+		Count(&count)
+	return count > 0
+}
+
 // Get followed profile thoughts, rating, etc on specific content.
 func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId string) ([]FollowThoughts, error) {
 	var follows []entity.Follow

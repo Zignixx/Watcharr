@@ -419,6 +419,12 @@ export type DiscoverFilterOption = `${DiscoverFilter}`;
 export interface DiscoverRequest extends PaginationParams {
 	type?: SearchType;
 	filter?: DiscoverFilter;
+	sourceUserId?: number;
+}
+
+export interface RecommendSourceUser {
+	id: number;
+	username: string;
 }
 
 export interface PersonDetailsResponse {

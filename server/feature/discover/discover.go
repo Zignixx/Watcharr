@@ -28,21 +28,28 @@ type ContentProvider interface {
 	ShowRecommendations(tmdbId int, pageNum int) (tmdb.TMDBShowSimilar, error)
 }
 
+type FollowProvider interface {
+	IsFollowing(currentUserId uint, targetUserId uint) bool
+}
+
 type Service struct {
 	db              *gorm.DB
 	cfg             *config.ServerConfig
 	contentProvider ContentProvider
+	followProvider  FollowProvider
 }
 
 func NewService(
 	db *gorm.DB,
 	cfg *config.ServerConfig,
 	contentProvider ContentProvider,
+	followProvider FollowProvider,
 ) *Service {
 	return &Service{
 		db,
 		cfg,
 		contentProvider,
+		followProvider,
 	}
 }
 
@@ -416,7 +423,17 @@ func (s *Service) discoverRecommended(
 	meta domain.DiscoverRequestMeta,
 	resp *domain.DiscoverResponse,
 ) error {
-	cacheKey := fmt.Sprintf("recommendations_%d_%s", meta.UserID, contentType)
+	// Determine which user's watched list to use as recommendation source.
+	sourceUserID := meta.UserID
+	if meta.SourceUserID != 0 {
+		// Validate that the current user follows the source user.
+		if !s.followProvider.IsFollowing(meta.UserID, meta.SourceUserID) {
+			return errors.New("you must follow this user to get recommendations from them")
+		}
+		sourceUserID = meta.SourceUserID
+	}
+
+	cacheKey := fmt.Sprintf("recommendations_%d_%d_%s", meta.UserID, sourceUserID, contentType)
 
 	// Try to get cached results
 	var allResults []domain.Media
@@ -426,7 +443,7 @@ func (s *Service) discoverRecommended(
 	} else {
 		// Compute recommendations from scratch
 		var err error
-		allResults, err = s.computeRecommendations(contentType, meta.UserID)
+		allResults, err = s.computeRecommendations(contentType, sourceUserID, meta.UserID)
 		if err != nil {
 			return err
 		}
@@ -470,12 +487,14 @@ func (s *Service) discoverRecommended(
 
 // computeRecommendations does the heavy lifting: fetches watched list,
 // calls TMDB for recommendations, scores and sorts them.
-func (s *Service) computeRecommendations(contentType string, userID uint) ([]domain.Media, error) {
-	// Get user's watched items with content loaded
+// sourceUserID: the user whose watched list is used as source.
+// viewerUserID: the current user viewing (to exclude their own watched items).
+func (s *Service) computeRecommendations(contentType string, sourceUserID uint, viewerUserID uint) ([]domain.Media, error) {
+	// Get source user's watched items with content loaded
 	var watched []entity.Watched
 	res := s.db.Model(&entity.Watched{}).
 		Preload("Content").
-		Where("user_id = ? AND content_id IS NOT NULL", userID).
+		Where("user_id = ? AND content_id IS NOT NULL", sourceUserID).
 		Find(&watched)
 	if res.Error != nil {
 		slog.Error("computeRecommendations: Failed to get watched!", "error", res.Error)
@@ -486,6 +505,23 @@ func (s *Service) computeRecommendations(contentType string, userID uint) ([]dom
 		return nil, nil
 	}
 
+	// Build watched set for viewer (to exclude items they already have)
+	watchedSet := make(map[int]bool)
+	if viewerUserID != sourceUserID {
+		var viewerWatched []entity.Watched
+		vRes := s.db.Model(&entity.Watched{}).
+			Preload("Content").
+			Where("user_id = ? AND content_id IS NOT NULL", viewerUserID).
+			Find(&viewerWatched)
+		if vRes.Error == nil {
+			for _, w := range viewerWatched {
+				if w.Content != nil {
+					watchedSet[w.Content.TmdbID] = true
+				}
+			}
+		}
+	}
+
 	// Build source items: tmdbId -> weight, filtered by content type, excluding DROPPED.
 	type sourceItem struct {
 		tmdbId      int
@@ -494,7 +530,6 @@ func (s *Service) computeRecommendations(contentType string, userID uint) ([]dom
 		title       string
 	}
 	var sources []sourceItem
-	watchedSet := make(map[int]bool)
 
 	for _, w := range watched {
 		if w.Content == nil {
@@ -636,4 +671,36 @@ func (s *Service) computeRecommendations(contentType string, userID uint) ([]dom
 	}
 
 	return allMedia, nil
+}
+
+// GetRecommendSources returns followed users who have at least 1 non-dropped watched entry.
+func (s *Service) GetRecommendSources(userID uint) ([]domain.RecommendSourceUser, error) {
+	// Get users that userID follows.
+	var follows []entity.Follow
+	res := s.db.Where("user_id = ?", userID).
+		Preload("FollowedUser", "private = ?", 0).
+		Find(&follows)
+	if res.Error != nil {
+		slog.Error("GetRecommendSources: Failed to get follows", "error", res.Error)
+		return nil, errors.New("failed to get follows")
+	}
+
+	var sources []domain.RecommendSourceUser
+	for _, f := range follows {
+		if f.FollowedUser.ID == 0 {
+			continue
+		}
+		// Check if this followed user has at least 1 non-dropped watched entry.
+		var count int64
+		s.db.Model(&entity.Watched{}).
+			Where("user_id = ? AND content_id IS NOT NULL AND status != ?", f.FollowedUserID, entity.DROPPED).
+			Count(&count)
+		if count > 0 {
+			sources = append(sources, domain.RecommendSourceUser{
+				ID:       f.FollowedUser.ID,
+				Username: f.FollowedUser.Username,
+			})
+		}
+	}
+	return sources, nil
 }

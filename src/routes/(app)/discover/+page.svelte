@@ -26,7 +26,7 @@
 	const scroll = infScroll({ callback: onScrollToBottom });
 	const dataLoader = paginatedLoader<Media, undefined>(load);
 
-	let discoverFilter: DiscoverFilter = $state(DiscoverFilter.trending);
+	let discoverFilter: string = $state(DiscoverFilter.trending);
 	let discoverType: SearchType | undefined = $derived.by(() => {
 		const t = page.url.searchParams.get("type");
 		if (t) {
@@ -34,10 +34,20 @@
 		}
 		return SearchType.multi;
 	});
-	let nextLoadParams: DiscoverRequest = $derived({
-		page: dataLoader.state.page + 1,
-		type: discoverType,
-		filter: discoverFilter,
+	let nextLoadParams: DiscoverRequest = $derived.by(() => {
+		// Parse compound filter: "recommended:123" → filter=recommended, sourceUserId=123
+		let filter: DiscoverFilter = discoverFilter as DiscoverFilter;
+		let sourceUserId: number | undefined;
+		if (discoverFilter.startsWith("recommended:")) {
+			filter = DiscoverFilter.recommended;
+			sourceUserId = parseInt(discoverFilter.split(":")[1], 10);
+		}
+		return {
+			page: dataLoader.state.page + 1,
+			type: discoverType,
+			filter,
+			sourceUserId,
+		};
 	});
 
 	async function load(signal: GenericAbortSignal) {

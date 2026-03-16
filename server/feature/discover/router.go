@@ -38,6 +38,8 @@ func (r *Router) AddRoutes() {
 
 	// Master discovery
 	discover.GET("", router.WhereaboutsRequired(r.br.Cfg), router.PaginatedRequest(true), r.GetDiscover)
+	// Get followed users eligible as recommendation sources
+	discover.GET("/recommend-sources", r.GetRecommendSources)
 }
 
 // NOTE: The handler functions use `copier` to copy values from the response
@@ -66,9 +68,10 @@ func (r *Router) GetDiscover(c *gin.Context) {
 		return
 	}
 	resp, err := r.service.Discover(req, domain.DiscoverRequestMeta{
-		PageParams: pp,
-		Region:     c.MustGet("userCountry").(string),
-		UserID:     userId,
+		PageParams:   pp,
+		Region:       c.MustGet("userCountry").(string),
+		UserID:       userId,
+		SourceUserID: req.SourceUserID,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: err.Error()})
@@ -99,4 +102,14 @@ func (r *Router) GetDiscover(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, ww)
+}
+
+func (r *Router) GetRecommendSources(c *gin.Context) {
+	userId := c.MustGet("userId").(uint)
+	sources, err := r.service.GetRecommendSources(userId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, sources)
 }

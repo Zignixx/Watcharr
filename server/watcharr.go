@@ -224,7 +224,7 @@ func main() {
 	followService := follow.NewService(db)
 	tagService := tag.NewService(db, watchedService)
 	searchService := search.NewService(db, br.Cfg, contentService, watchedService)
-	discoverService := discover.NewService(db, br.Cfg, contentService)
+	discoverService := discover.NewService(db, br.Cfg, contentService, followService)
 	importService := imprt.NewService(
 		db,
 		watchedService,
