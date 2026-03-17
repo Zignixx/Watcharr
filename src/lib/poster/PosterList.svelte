@@ -47,24 +47,37 @@
 			margin: 5px 0;
 		}
 
-		&:global(.wrapped li) {
-			@media screen and (max-width: 390px) {
-				flex: 0 48.5%;
-			}
-			@media screen and (max-width: 352px) {
-				flex: 0 48%;
-			}
-			@media screen and (width <= 349px) {
-				flex: unset;
+		// Desktop: fixed-width posters (only above mobile breakpoint)
+		@media screen and (min-width: 601px) {
+			&:global(.wrapped .container) {
+				min-width: 150px !important;
+				width: 170px !important;
+				min-height: 256.367px !important;
 			}
 		}
 
-		&:global(.wrapped .container) {
-			min-width: 150px !important;
+		// Mobile: switch to CSS Grid for even columns that fill the screen.
+		@media screen and (max-width: 600px) {
+			&:global(.wrapped) {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 8px;
+				margin: 12px 0;
+				padding: 0 8px;
+				width: 100%;
+				max-width: 100%;
+			}
 
-			@media screen and (width <= 349px), screen and (width > 390px) {
-				width: 170px !important;
-				min-height: 256.367px !important;
+			&:global(.wrapped .container) {
+				min-width: 0 !important;
+				width: 100% !important;
+				min-height: 0 !important;
+			}
+		}
+
+		@media screen and (max-width: 350px) {
+			&:global(.wrapped) {
+				grid-template-columns: repeat(2, 1fr);
 			}
 		}
 	}

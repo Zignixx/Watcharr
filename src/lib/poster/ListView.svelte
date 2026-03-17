@@ -150,6 +150,9 @@
 					>
 						<td class="col-name">
 							<span class="media-name">{media.name}</span>
+							<span class="mobile-meta">
+								{typeLabel(media)}{#if getYear(media) !== "—"} · {getYear(media)}{/if}{#if media.watched?.createdAt} · {new Date(media.watched.createdAt).toLocaleDateString()}{/if}
+							</span>
 						</td>
 						<td class="col-type">{typeLabel(media)}</td>
 						<td class="col-year">{getYear(media)}</td>
@@ -307,6 +310,10 @@
 			display: block;
 			max-width: 400px;
 		}
+
+		.mobile-meta {
+			display: none;
+		}
 	}
 
 	.col-type {
@@ -349,12 +356,103 @@
 	}
 
 	@media screen and (max-width: 600px) {
-		.col-type, .col-year, .col-added {
-			display: none;
+		.list-view {
+			padding: 0;
 		}
 
-		.col-name .media-name {
-			max-width: 180px;
+		.list-table-wrap {
+			border: none;
+			border-radius: 0;
+			overflow-x: visible;
+		}
+
+		.list-table {
+			thead {
+				display: none;
+			}
+
+			tbody {
+				display: flex;
+				flex-direction: column;
+
+				.list-row {
+					display: grid;
+					grid-template-columns: 1fr auto;
+					grid-template-rows: auto auto;
+					gap: 2px 12px;
+					padding: 10px 14px;
+					background: none;
+					border: none;
+					border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+					border-radius: 0;
+
+					&:nth-child(odd) {
+						background: rgba(255, 255, 255, 0.03);
+					}
+
+					&:hover {
+						background: rgba(255, 255, 255, 0.06);
+					}
+
+					td {
+						padding: 0;
+						white-space: normal;
+						background-color: transparent !important;
+					}
+
+					.col-name {
+						grid-column: 1 / -1;
+						grid-row: 1;
+						min-width: 0;
+
+						.media-name {
+							max-width: none;
+							font-size: 14px;
+							font-weight: 600;
+							white-space: nowrap;
+							overflow: hidden;
+							text-overflow: ellipsis;
+						}
+
+						.mobile-meta {
+							display: block;
+							font-size: 11px;
+							color: $text-color-accent;
+							opacity: 0.5;
+							margin-top: 1px;
+						}
+					}
+
+					.col-status {
+						grid-column: 1;
+						grid-row: 2;
+						margin-top: 4px;
+					}
+
+					.col-rating {
+						grid-column: 2;
+						grid-row: 2;
+						text-align: right;
+						display: flex;
+						align-items: center;
+						justify-content: flex-end;
+						margin-top: 4px;
+
+						.rating-val {
+							font-size: 13px;
+						}
+					}
+
+					.col-type, .col-year, .col-added {
+						display: none;
+					}
+				}
+			}
+		}
+
+		.status-badge {
+			font-size: 11px;
+			padding: 2px 6px;
 		}
 	}
 </style>

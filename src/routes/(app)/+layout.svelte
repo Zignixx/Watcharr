@@ -145,10 +145,19 @@
 	 * on how big the main search bar is.
 	 */
 	function decideOnNavSplit() {
+		// At ≤620px, CSS handles search visibility (inline hidden, .small shown).
+		// No need for split-nav class.
+		if (window.innerWidth <= 1050) {
+			document.body.classList.remove("split-nav");
+			return;
+		}
 		if (window.innerWidth <= 305) {
 			document.body.classList.add("split-nav");
 			return;
 		}
+		// Temporarily unsplit to measure the real search input width
+		const wasSplit = document.body.classList.contains("split-nav");
+		if (wasSplit) document.body.classList.remove("split-nav");
 		const bigInput = navEl?.querySelector("input:not(.small)");
 		if (bigInput) {
 			const b = bigInput.getBoundingClientRect();
@@ -157,11 +166,11 @@
 				document.body.classList.add("split-nav");
 				console.debug("decideOnNavSplit: Splitting nav.");
 			} else {
-				document.body.classList.remove("split-nav");
 				console.debug("decideOnNavSplit: Unsplitting nav.");
 			}
 		} else {
 			console.warn("decideOnNavSplit: bigInput not found!", bigInput);
+			if (wasSplit) document.body.classList.add("split-nav");
 		}
 	}
 
@@ -427,6 +436,7 @@
 		gap: 3px;
 		z-index: 99990;
 		transition: top 200ms ease-in-out;
+		max-width: 100vw;
 		@include nav-blur;
 
 		&:global(.scrolled-down) {
@@ -439,6 +449,7 @@
 			gap: 20px;
 			justify-content: space-between;
 			align-items: center;
+			overflow-x: clip;
 
 			a,
 			.btns {
@@ -446,6 +457,7 @@
 				width, ensuring the main search bar can stay truly centered
 				when possible. */
 				flex: 1;
+				min-width: 0;
 			}
 
 			@media screen and (max-width: 435px) {
@@ -548,21 +560,19 @@
 				}
 			}
 
-			@media screen and (max-width: 460px) {
-				:global(svg) {
-					display: block;
-				}
-
-				input::placeholder {
-					color: transparent;
-				}
+			// Hide inline search early — .small input below wrapper takes over
+			@media screen and (max-width: 1050px) {
+				display: none;
 			}
 		}
 
 		:global(body.split-nav) & {
 			.search {
-				/* We hide with visibility: hidden, so the decideOnNavSplit can
-				still get the search width for it's decision logic. */
+				/* Collapse to zero width so it doesn't cause overflow.
+				   decideOnNavSplit temporarily unsplits to measure. */
+				flex: 0 0 0px;
+				min-width: 0;
+				overflow: hidden;
 				opacity: 0;
 				visibility: hidden;
 			}
@@ -586,6 +596,12 @@
 				display: none;
 				margin-left: auto;
 				margin-right: auto;
+
+				// Show the below-wrapper search bar
+				@media screen and (max-width: 1050px) {
+					display: block;
+					width: 100%;
+				}
 			}
 
 			&:hover,
@@ -609,6 +625,16 @@
 			button.other {
 				padding-top: 2px;
 				width: 28px;
+				flex-shrink: 0;
+
+				@media screen and (max-width: 500px) {
+					width: 24px;
+				}
+
+				@media screen and (max-width: 400px) {
+					width: 22px;
+				}
+
 				transition:
 					fill 150ms ease,
 					stroke 150ms ease,
@@ -665,10 +691,26 @@
 
 			& > button:not(.face) {
 				margin-right: 12px;
+
+				@media screen and (max-width: 500px) {
+					margin-right: 6px;
+				}
+
+				@media screen and (max-width: 400px) {
+					margin-right: 3px;
+				}
 			}
 
 			button.following {
 				margin-right: 17px;
+
+				@media screen and (max-width: 500px) {
+					margin-right: 8px;
+				}
+
+				@media screen and (max-width: 400px) {
+					margin-right: 4px;
+				}
 			}
 
 			button.face {

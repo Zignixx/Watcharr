@@ -488,8 +488,13 @@
 		min-width: 170px;
 		width: 170px;
 		position: relative;
-		aspect-ratio: 170000/256367;
+		aspect-ratio: 2 / 3;
 		transition: transform 150ms ease;
+
+		@media screen and (max-width: 600px) {
+			min-width: 0;
+			width: 100%;
+		}
 
 		&.status-planned {
 			border: 2px solid rgba(100, 149, 237, 0.25);
