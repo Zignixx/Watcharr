@@ -22,6 +22,7 @@
 	import { buildExtraDetails } from "./lib";
 	import { decode } from "blurhash";
 	import WatchedDeleteModal from "../watched/WatchedDeleteModal.svelte";
+	import PosterContextMenu from "./PosterContextMenu.svelte";
 
 	interface Props {
 		media: Media;
@@ -83,6 +84,15 @@
 
 	// If the item was just deleted from watched list (via this poster.)
 	let justDeletedFromWatcheds = $state(false);
+
+	// Context menu state
+	let ctxMenu: { x: number; y: number } | undefined = $state();
+
+	function handleContextMenu(e: MouseEvent) {
+		if (disableInteraction || !meta?.id) return;
+		e.preventDefault();
+		ctxMenu = { x: e.clientX, y: e.clientY };
+	}
 
 	const meta:
 		| {
@@ -289,6 +299,7 @@
 <!-- HACK: disabled this issue for now, it should probably be fixed properly -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <li
+	oncontextmenu={handleContextMenu}
 	onmouseenter={(e) => {
 		mouseOverPoster = true;
 		if (!posterActive) calculateTransformOrigin(e);
@@ -408,6 +419,19 @@
 	</div>
 </li>
 
+{#if ctxMenu && meta?.id}
+	<PosterContextMenu
+		x={ctxMenu.x}
+		y={ctxMenu.y}
+		{watched}
+		contentId={meta.id}
+		contentType={meta.type}
+		mediaName={media.name}
+		onClose={() => { ctxMenu = undefined; }}
+		onWatchedUpdate={(w) => { updateWatchedVar(w); }}
+	/>
+{/if}
+
 {#if showConfirmDeleteModalCallback !== undefined}
 	<WatchedDeleteModal
 		mediaName={media.name}
@@ -468,19 +492,19 @@
 		transition: transform 150ms ease;
 
 		&.status-planned {
-			border: 2px solid rgba(100, 149, 237, 0.5);
+			border: 2px solid rgba(100, 149, 237, 0.25);
 		}
 		&.status-watching {
-			border: 2px solid rgba(255, 193, 7, 0.45);
+			border: 2px solid rgba(255, 193, 7, 0.25);
 		}
 		&.status-finished {
-			border: 2px solid rgba(76, 175, 80, 0.45);
+			border: 2px solid rgba(76, 175, 80, 0.25);
 		}
 		&.status-hold {
-			border: 2px solid rgba(255, 152, 0, 0.45);
+			border: 2px solid rgba(255, 152, 0, 0.25);
 		}
 		&.status-dropped {
-			border: 2px solid rgba(244, 67, 54, 0.45);
+			border: 2px solid rgba(244, 67, 54, 0.25);
 		}
 
 		&.fluid-size {

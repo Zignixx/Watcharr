@@ -4,13 +4,15 @@
 	import Icon from "@/lib/Icon.svelte";
 	import Poster from "@/lib/poster/Poster.svelte";
 	import PosterList from "@/lib/poster/PosterList.svelte";
+	import ListView from "@/lib/poster/ListView.svelte";
+	import ExportModal from "@/lib/poster/ExportModal.svelte";
 	import Spinner from "@/lib/Spinner.svelte";
 	import infScroll from "@/lib/util/infScroll";
 	import paginatedLoader from "@/lib/util/paginatedLoader.svelte";
 	import { clearActiveFilters, store } from "@/store.svelte";
 	import type { Media } from "@/types";
 	import axios, { type GenericAbortSignal } from "axios";
-	import { onDestroy, untrack } from "svelte";
+	import { onDestroy, onMount, untrack } from "svelte";
 
 	const scroll = infScroll({ callback: onScrollToBottom });
 	const dataLoader = paginatedLoader<Media, undefined>(load);
@@ -61,10 +63,21 @@
 		}
 	});
 
+	let showExport = $state(false);
+
+	function handleExportEvent() {
+		showExport = true;
+	}
+
+	onMount(() => {
+		window.addEventListener("watcharr-export", handleExportEvent);
+	});
+
 	onDestroy(() => {
 		console.log("MAIN PAGE DESTROYED");
 		scroll.destroy();
 		dataLoader.abortReq("page destroyed");
+		window.removeEventListener("watcharr-export", handleExportEvent);
 	});
 </script>
 
@@ -82,34 +95,57 @@
 	{JSON.stringify(store.sortAndFiltersForQueryParams)}</span
 > -->
 
-<PosterList>
+{#if store.viewMode === "list"}
 	{#if dataLoader.state.data?.length > 0}
-		{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
-			{#if w}
-				<Poster
-					bind:watched={dataLoader.state.data[i].watched}
-					media={w}
-					fluidSize={true}
-				/>
-			{/if}
-		{/each}
+		<ListView bind:items={dataLoader.state.data} />
 	{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
-		<div class="empty-list">
-			<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
-			<h2 class="norm">Your list looks empty!</h2>
-			<h4 class="norm">
-				Try {`${store.hasActiveFilters ? "removing your active filters or" : ""}`}
-				searching for something you would like to add.
-			</h4>
-			{#if !store.hasActiveFilters}
-				<button onclick={() => goto("/import")}>Import</button>
-			{/if}
-			{#if store.hasActiveFilters}
-				<button onclick={() => clearActiveFilters()}>Clear Filters</button>
-			{/if}
+		<div class="empty-list-wrap">
+			<div class="empty-list">
+				<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
+				<h2 class="norm">Your list looks empty!</h2>
+				<h4 class="norm">
+					Try {`${store.hasActiveFilters ? "removing your active filters or" : ""}`}
+					searching for something you would like to add.
+				</h4>
+				{#if !store.hasActiveFilters}
+					<button onclick={() => goto("/import")}>Import</button>
+				{/if}
+				{#if store.hasActiveFilters}
+					<button onclick={() => clearActiveFilters()}>Clear Filters</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
-</PosterList>
+{:else}
+	<PosterList>
+		{#if dataLoader.state.data?.length > 0}
+			{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
+				{#if w}
+					<Poster
+						bind:watched={dataLoader.state.data[i].watched}
+						media={w}
+						fluidSize={true}
+					/>
+				{/if}
+			{/each}
+		{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
+			<div class="empty-list">
+				<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
+				<h2 class="norm">Your list looks empty!</h2>
+				<h4 class="norm">
+					Try {`${store.hasActiveFilters ? "removing your active filters or" : ""}`}
+					searching for something you would like to add.
+				</h4>
+				{#if !store.hasActiveFilters}
+					<button onclick={() => goto("/import")}>Import</button>
+				{/if}
+				{#if store.hasActiveFilters}
+					<button onclick={() => clearActiveFilters()}>Clear Filters</button>
+				{/if}
+			</div>
+		{/if}
+	</PosterList>
+{/if}
 
 {#if dataLoader.state.reqLoading}
 	<div style="margin-bottom: 60px;">
@@ -130,12 +166,21 @@
 	</div>
 {/if}
 
+{#if showExport}
+	<ExportModal items={dataLoader.state.data} onClose={() => { showExport = false; }} />
+{/if}
+
 <!-- TODO: A 'That's it' message when you reach bottom of your list? -->
 <!-- {#if !dataLoader.state.reqLoadError && dataLoader.state.page === dataLoader.state.pageMax}
 	<b>That's it!</b>
 {/if} -->
 
 <style lang="scss">
+	.empty-list-wrap {
+		display: flex;
+		justify-content: center;
+	}
+
 	.empty-list {
 		display: flex;
 		flex-flow: column;

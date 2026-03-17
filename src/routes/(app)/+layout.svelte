@@ -250,6 +250,31 @@
 			<div class="search"></div>
 		{/if}
 		<div class="btns">
+			<!-- View toggle + Export (only on main list) -->
+			{#if page.url?.pathname === "/"}
+				<button
+					class="plain other viewToggle"
+					onclick={() => { store.viewMode = store.viewMode === "grid" ? "list" : "grid"; }}
+					use:tooltip={{
+						text: store.viewMode === "grid" ? "List View" : "Grid View",
+						pos: "bot",
+					}}
+				>
+					<Icon i={store.viewMode === "grid" ? "view-list" : "view-grid"} />
+				</button>
+				<button
+					class="plain other exportBtn"
+					onclick={() => {
+						window.dispatchEvent(new CustomEvent("watcharr-export"));
+					}}
+					use:tooltip={{
+						text: "Export",
+						pos: "bot",
+					}}
+				>
+					<Icon i="download" />
+				</button>
+			{/if}
 			<!-- Detailed posters -->
 			{#if page.url?.pathname === "/" || page.url?.pathname.startsWith("/search") || page.url?.pathname.includes("/lists/")}
 				<button

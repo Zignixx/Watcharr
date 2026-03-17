@@ -13,6 +13,7 @@ import type { Notification } from "./lib/util/notify";
 import { browser } from "$app/environment";
 import { toggleTheme } from "./lib/util/theme";
 
+export type ViewMode = "grid" | "list";
 export const defaultSort = ["DATEADDED", "DOWN"];
 
 interface Store {
@@ -43,6 +44,7 @@ interface Store {
 	follows: Follow[];
 	wlDetailedView: WLDetailedViewOption[];
 	tags: Tag[];
+	viewMode: ViewMode;
 }
 
 /**
@@ -63,6 +65,7 @@ const _store: Store = $state({
 	follows: [],
 	wlDetailedView: [],
 	tags: [],
+	viewMode: "grid" as ViewMode,
 });
 
 const updateSortAndFiltersForQueryParams = () => {
@@ -211,6 +214,14 @@ export const store = {
 	set tags(v) {
 		_store.tags = v;
 	},
+	get viewMode() {
+		return _store.viewMode;
+	},
+	set viewMode(v: ViewMode) {
+		_store.viewMode = v;
+		localStorage.setItem("viewMode", v);
+		console.debug("Store: Saved viewMode:", v);
+	},
 };
 
 /**
@@ -229,6 +240,7 @@ export const clearAllStores = () => {
 	store.follows = [];
 	store.wlDetailedView = [];
 	store.tags = [];
+	store.viewMode = "grid";
 	clearActiveFilters();
 };
 
@@ -296,6 +308,12 @@ function rehydrateStore() {
 			"rehydrateStore: Restored wlDetailedView:",
 			$state.snapshot(store.wlDetailedView),
 		);
+	}
+	// Restore viewMode
+	const vm = localStorage.getItem("viewMode");
+	if (vm === "grid" || vm === "list") {
+		_store.viewMode = vm;
+		console.debug("rehydrateStore: Restored viewMode:", vm);
 	}
 	console.info("rehydrateStore: Done.");
 }
