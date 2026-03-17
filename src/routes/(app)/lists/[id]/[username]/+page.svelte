@@ -180,7 +180,7 @@
 						watched={dataLoader.state.data[i].watched}
 						media={w}
 						fluidSize={true}
-						disableInteraction={true}
+						disableInteraction={!isLoggedIn}
 					/>
 				{/if}
 			{/each}
