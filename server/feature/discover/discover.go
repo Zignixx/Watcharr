@@ -16,8 +16,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// ─── Recommendation tuning constants ───────────────────────────────────────
+// Adjust these to change how recommendations are computed and served.
+const (
+	// Max number of watched items used as recommendation sources (highest rated first).
+	recMaxSources = 100
+	// Default weight for unrated items (rating 0). Scale is 0–10.
+	recDefaultWeight = 2.5
+	// Number of TMDB recommendation pages fetched per source item (~20 results/page).
+	recTMDBPages = 2
+	// Default page size when paginating recommendation results.
+	recDefaultPageSize = 20
+	// How long computed recommendations are cached before recomputing.
+	recCacheTTL = time.Hour
+	// Interval at which expired cache entries are purged.
+	recCacheCleanup = time.Minute * 5
+)
+
 // In-memory cache for computed recommendation lists (per user + content type).
-var recCache = gocache.New(time.Hour, time.Minute*5)
+var recCache = gocache.New(recCacheTTL, recCacheCleanup)
 
 type ContentProvider interface {
 	Trending(t tmdb.TrendingType, pageNum int, region string) (tmdb.TMDBTrendingCombined, error)
@@ -448,7 +465,7 @@ func (s *Service) discoverRecommended(
 			return err
 		}
 		// Cache for 1 hour
-		recCache.Set(cacheKey, allResults, time.Hour)
+		recCache.Set(cacheKey, allResults, recCacheTTL)
 		slog.Debug("discoverRecommended: Computed and cached", "user", meta.UserID, "contentType", contentType, "total", len(allResults))
 	}
 
@@ -456,7 +473,7 @@ func (s *Service) discoverRecommended(
 	total := len(allResults)
 	limit := meta.PageParams.Limit
 	if limit <= 0 {
-		limit = 20
+		limit = recDefaultPageSize
 	}
 	page := meta.PageParams.Page
 	if page <= 0 {
@@ -553,7 +570,7 @@ func (s *Service) computeRecommendations(contentType string, sourceUserID uint, 
 
 		weight := w.Rating
 		if weight <= 0 {
-			weight = 5.0
+			weight = recDefaultWeight
 		}
 
 		sources = append(sources, sourceItem{
@@ -572,9 +589,8 @@ func (s *Service) computeRecommendations(contentType string, sourceUserID uint, 
 		return sources[i].weight > sources[j].weight
 	})
 
-	maxSources := 50
-	if len(sources) > maxSources {
-		sources = sources[:maxSources]
+	if len(sources) > recMaxSources {
+		sources = sources[:recMaxSources]
 	}
 
 	type recSource struct {
@@ -590,54 +606,56 @@ func (s *Service) computeRecommendations(contentType string, sourceUserID uint, 
 	recScores := make(map[int]*scoredRec)
 
 	for _, src := range sources {
-		switch src.contentType {
-		case entity.MOVIE:
-			tmdbRes, err := s.contentProvider.MovieRecommendations(src.tmdbId, 1)
-			if err != nil {
-				slog.Warn("computeRecommendations: Failed to get movie recs",
-					"tmdbId", src.tmdbId, "error", err)
-				continue
-			}
-			for _, v := range tmdbRes.Results {
-				m := v.AsMedia()
-				if watchedSet[m.IDs.TMDB] {
-					continue
+		for pg := 1; pg <= recTMDBPages; pg++ {
+			switch src.contentType {
+			case entity.MOVIE:
+				tmdbRes, err := s.contentProvider.MovieRecommendations(src.tmdbId, pg)
+				if err != nil {
+					slog.Warn("computeRecommendations: Failed to get movie recs",
+						"tmdbId", src.tmdbId, "page", pg, "error", err)
+					break
 				}
-				if existing, ok := recScores[m.IDs.TMDB]; ok {
-					existing.score += src.weight
-					existing.sources++
-					existing.recSources = append(existing.recSources, recSource{name: src.title, weight: src.weight})
-				} else {
-					recScores[m.IDs.TMDB] = &scoredRec{
-						media:      m,
-						score:      src.weight,
-						sources:    1,
-						recSources: []recSource{{name: src.title, weight: src.weight}},
+				for _, v := range tmdbRes.Results {
+					m := v.AsMedia()
+					if watchedSet[m.IDs.TMDB] {
+						continue
+					}
+					if existing, ok := recScores[m.IDs.TMDB]; ok {
+						existing.score += src.weight
+						existing.sources++
+						existing.recSources = append(existing.recSources, recSource{name: src.title, weight: src.weight})
+					} else {
+						recScores[m.IDs.TMDB] = &scoredRec{
+							media:      m,
+							score:      src.weight,
+							sources:    1,
+							recSources: []recSource{{name: src.title, weight: src.weight}},
+						}
 					}
 				}
-			}
-		case entity.SHOW:
-			tmdbRes, err := s.contentProvider.ShowRecommendations(src.tmdbId, 1)
-			if err != nil {
-				slog.Warn("computeRecommendations: Failed to get show recs",
-					"tmdbId", src.tmdbId, "error", err)
-				continue
-			}
-			for _, v := range tmdbRes.Results {
-				m := v.AsMedia()
-				if watchedSet[m.IDs.TMDB] {
-					continue
+			case entity.SHOW:
+				tmdbRes, err := s.contentProvider.ShowRecommendations(src.tmdbId, pg)
+				if err != nil {
+					slog.Warn("computeRecommendations: Failed to get show recs",
+						"tmdbId", src.tmdbId, "page", pg, "error", err)
+					break
 				}
-				if existing, ok := recScores[m.IDs.TMDB]; ok {
-					existing.score += src.weight
-					existing.sources++
-					existing.recSources = append(existing.recSources, recSource{name: src.title, weight: src.weight})
-				} else {
-					recScores[m.IDs.TMDB] = &scoredRec{
-						media:      m,
-						score:      src.weight,
-						sources:    1,
-						recSources: []recSource{{name: src.title, weight: src.weight}},
+				for _, v := range tmdbRes.Results {
+					m := v.AsMedia()
+					if watchedSet[m.IDs.TMDB] {
+						continue
+					}
+					if existing, ok := recScores[m.IDs.TMDB]; ok {
+						existing.score += src.weight
+						existing.sources++
+						existing.recSources = append(existing.recSources, recSource{name: src.title, weight: src.weight})
+					} else {
+						recScores[m.IDs.TMDB] = &scoredRec{
+							media:      m,
+							score:      src.weight,
+							sources:    1,
+							recSources: []recSource{{name: src.title, weight: src.weight}},
+						}
 					}
 				}
 			}
