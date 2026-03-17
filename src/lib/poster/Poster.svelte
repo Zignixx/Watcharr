@@ -50,6 +50,8 @@
 		 * Ran when watched item is updated via poster.
 		 */
 		onUpdated?: (() => void) | undefined;
+		ownerWatched?: Watched;
+		ownerName?: string;
 	}
 
 	let {
@@ -66,6 +68,8 @@
 		hideIfNotOnList = false,
 		onClick = undefined,
 		onUpdated = undefined,
+		ownerWatched = undefined,
+		ownerName = undefined,
 	}: Props = $props();
 
 	// If poster is active (scaled up)
@@ -427,6 +431,8 @@
 		contentId={meta.id}
 		contentType={meta.type}
 		mediaName={media.name}
+		{ownerWatched}
+		{ownerName}
 		onClose={() => { ctxMenu = undefined; }}
 		onWatchedUpdate={(w) => { updateWatchedVar(w); }}
 	/>

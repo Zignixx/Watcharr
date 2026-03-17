@@ -203,7 +203,7 @@
 
 {#if store.viewMode === "list"}
 	{#if dataLoader.state.data?.length > 0}
-		<ListView items={itemsWithMyWatched} onWatchedUpdate={() => loadMyWatchedData()} />
+		<ListView items={itemsWithMyWatched} ownerItems={dataLoader.state.data} ownerName={meta.username} onWatchedUpdate={() => loadMyWatchedData()} />
 	{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
 		<div class="empty-list-wrap">
 			<div class="empty-list">
@@ -226,6 +226,8 @@
 						media={w}
 						fluidSize={true}
 						disableInteraction={!isLoggedIn}
+						ownerWatched={w.watched}
+						ownerName={meta.username}
 						onUpdated={() => loadMyWatchedData()}
 					/>
 				{/if}

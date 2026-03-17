@@ -16,9 +16,11 @@
 	interface Props {
 		items: Media[];
 		onWatchedUpdate?: () => void;
+		ownerItems?: Media[];
+		ownerName?: string;
 	}
 
-	let { items = $bindable(), onWatchedUpdate }: Props = $props();
+	let { items = $bindable(), onWatchedUpdate, ownerItems, ownerName }: Props = $props();
 
 	type SortKey = "name" | "rating" | "status" | "type" | "added" | "year";
 	type SortDir = "asc" | "desc";
@@ -112,6 +114,14 @@
 		}
 		onWatchedUpdate?.();
 	}
+
+	function getOwnerWatched(media: Media): Watched | undefined {
+		if (!ownerItems) return undefined;
+		const orig = ownerItems.find(
+			(o) => o.type === media.type && o.name === media.name && o.ids?.tmdb === media.ids?.tmdb && o.ids?.igdb === media.ids?.igdb,
+		);
+		return orig?.watched;
+	}
 </script>
 
 <div class="list-view">
@@ -200,6 +210,8 @@
 			contentId={meta.id ?? 0}
 			contentType={meta.type}
 			mediaName={media.name ?? ""}
+			ownerWatched={getOwnerWatched(media)}
+			{ownerName}
 			onClose={() => { ctxMenu = undefined; }}
 			onWatchedUpdate={(w) => {
 				handleWatchedUpdate(ctxMenu!.index, w);

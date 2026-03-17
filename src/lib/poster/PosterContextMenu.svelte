@@ -9,6 +9,7 @@
 	import Icon from "../Icon.svelte";
 	import { watchedStatuses, toUnderstandableStatus } from "../util/helpers";
 	import Rating from "../rating/Rating.svelte";
+	import { toShowableRating } from "../rating/helpers";
 	import { onMount, onDestroy } from "svelte";
 
 	interface Props {
@@ -20,6 +21,8 @@
 		mediaName: string;
 		onClose: () => void;
 		onWatchedUpdate: (w: Watched | undefined) => void;
+		ownerWatched?: Watched;
+		ownerName?: string;
 	}
 
 	let {
@@ -31,6 +34,8 @@
 		mediaName,
 		onClose,
 		onWatchedUpdate,
+		ownerWatched,
+		ownerName,
 	}: Props = $props();
 
 	let menuEl: HTMLDivElement | undefined = $state();
@@ -160,6 +165,27 @@
 		<span class="ctx-title">{mediaName}</span>
 		<div class="ctx-close-spacer"></div>
 	</div>
+
+	<!-- Owner info (read-only) -->
+	{#if ownerWatched}
+		<div class="ctx-owner-section">
+			<span class="ctx-label">{ownerName ? `${ownerName}'s Info` : "Owner's Info"}</span>
+			<div class="ctx-owner-row">
+				{#if ownerWatched.status}
+					<span class="ctx-owner-badge">
+						<Icon i={watchedStatuses[ownerWatched.status]} wh={14} />
+						{toUnderstandableStatus(ownerWatched.status, contentType === "game")}
+					</span>
+				{/if}
+				{#if ownerWatched.rating}
+					<span class="ctx-owner-badge">★ {toShowableRating(ownerWatched.rating)}</span>
+				{/if}
+			</div>
+			{#if ownerWatched.thoughts}
+				<div class="ctx-owner-thoughts">"{ownerWatched.thoughts}"</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Status Section -->
 	<div class="ctx-section">
@@ -313,6 +339,46 @@
 		&:last-child {
 			border-bottom: none;
 		}
+	}
+
+	.ctx-owner-section {
+		padding: 8px 12px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		background: rgba(255, 255, 255, 0.03);
+	}
+
+	.ctx-owner-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.ctx-owner-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.08);
+		font-size: 12px;
+		fill: $text-color;
+		text-transform: capitalize;
+
+		:global(svg) {
+			width: 14px;
+			height: 14px;
+			flex-shrink: 0;
+		}
+	}
+
+	.ctx-owner-thoughts {
+		margin-top: 6px;
+		font-size: 12px;
+		font-style: italic;
+		opacity: 0.7;
+		line-height: 1.4;
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 
 	.ctx-label {
