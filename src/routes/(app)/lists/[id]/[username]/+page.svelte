@@ -16,6 +16,7 @@
 	import { page } from "$app/state";
 	import PosterList from "@/lib/poster/PosterList.svelte";
 	import Poster from "@/lib/poster/Poster.svelte";
+	import ListView from "@/lib/poster/ListView.svelte";
 	import Error from "@/lib/Error.svelte";
 	import { afterNavigate } from "$app/navigation";
 
@@ -155,29 +156,46 @@
 	</div>
 </div>
 
-<PosterList>
+{#if store.viewMode === "list"}
 	{#if dataLoader.state.data?.length > 0}
-		{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
-			{#if w}
-				<Poster
-					watched={dataLoader.state.data[i].watched}
-					media={w}
-					fluidSize={true}
-					disableInteraction={true}
-				/>
-			{/if}
-		{/each}
+		<ListView bind:items={dataLoader.state.data} />
 	{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
-		<div class="empty-list">
-			<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
-			<h2 class="norm">This list is empty!</h2>
-			<h4 class="norm">Come back later to see if they have added anything.</h4>
-			{#if store.hasActiveFilters}
-				<button onclick={() => clearActiveFilters()}>Clear Filters</button>
-			{/if}
+		<div class="empty-list-wrap">
+			<div class="empty-list">
+				<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
+				<h2 class="norm">This list is empty!</h2>
+				<h4 class="norm">Come back later to see if they have added anything.</h4>
+				{#if store.hasActiveFilters}
+					<button onclick={() => clearActiveFilters()}>Clear Filters</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
-</PosterList>
+{:else}
+	<PosterList>
+		{#if dataLoader.state.data?.length > 0}
+			{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
+				{#if w}
+					<Poster
+						watched={dataLoader.state.data[i].watched}
+						media={w}
+						fluidSize={true}
+						disableInteraction={true}
+					/>
+				{/if}
+			{/each}
+		{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
+			<div class="empty-list">
+				<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
+				<h2 class="norm">This list is empty!</h2>
+				<h4 class="norm">Come back later to see if they have added anything.</h4>
+				{#if store.hasActiveFilters}
+					<button onclick={() => clearActiveFilters()}>Clear Filters</button>
+				{/if}
+			</div>
+		{/if}
+	</PosterList>
+{/if}
 
 {#if dataLoader.state.reqLoading}
 	<div style="margin-bottom: 60px;">
@@ -281,5 +299,10 @@
 			padding-right: 20px;
 			margin-top: 15px;
 		}
+	}
+
+	.empty-list-wrap {
+		display: flex;
+		justify-content: center;
 	}
 </style>

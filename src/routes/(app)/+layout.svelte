@@ -250,8 +250,8 @@
 			<div class="search"></div>
 		{/if}
 		<div class="btns">
-			<!-- View toggle + Export (only on main list) -->
-			{#if page.url?.pathname === "/"}
+			<!-- View toggle + Export -->
+			{#if page.url?.pathname === "/" || page.url?.pathname.includes("/lists/")}
 				<button
 					class="plain other viewToggle"
 					onclick={() => { store.viewMode = store.viewMode === "grid" ? "list" : "grid"; }}
@@ -262,6 +262,8 @@
 				>
 					<Icon i={store.viewMode === "grid" ? "view-list" : "view-grid"} />
 				</button>
+			{/if}
+			{#if page.url?.pathname === "/"}
 				<button
 					class="plain other exportBtn"
 					onclick={() => {
