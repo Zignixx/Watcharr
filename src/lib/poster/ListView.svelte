@@ -15,9 +15,10 @@
 
 	interface Props {
 		items: Media[];
+		onWatchedUpdate?: () => void;
 	}
 
-	let { items = $bindable() }: Props = $props();
+	let { items = $bindable(), onWatchedUpdate }: Props = $props();
 
 	type SortKey = "name" | "rating" | "status" | "type" | "added" | "year";
 	type SortDir = "asc" | "desc";
@@ -109,6 +110,7 @@
 		if (origIndex >= 0) {
 			items[origIndex].watched = w;
 		}
+		onWatchedUpdate?.();
 	}
 </script>
 

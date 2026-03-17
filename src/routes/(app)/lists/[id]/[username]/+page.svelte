@@ -5,8 +5,8 @@
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
-	import type { Media, PublicUser } from "@/types.js";
-	import { type GenericAbortSignal } from "axios";
+	import type { Media, MediaTypeE, PublicUser, Watched } from "@/types.js";
+	import axios, { type GenericAbortSignal } from "axios";
 	import { publicAxios } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
 	import paginatedLoader, {
@@ -30,6 +30,41 @@
 	let isLoggedIn = $derived(!!localStorage.getItem("token"));
 	let followBtnDisabled = $state(false);
 	let user: PublicUser | undefined = $state();
+
+	// Map of own watched data keyed by "tmdbId-type" or "igdbId-game"
+	let myWatchedMap: Map<string, Watched> = $state(new Map());
+
+	function watchedKey(m: Media): string | undefined {
+		if (m.type === "tmdb_movie" as MediaTypeE) return `${m.ids.tmdb}-movie`;
+		if (m.type === "tmdb_tv" as MediaTypeE) return `${m.ids.tmdb}-tv`;
+		if (m.type === "igdb_game" as MediaTypeE) return `${m.ids.igdb}-game`;
+		return undefined;
+	}
+
+	function getMyWatched(m: Media): Watched | undefined {
+		const key = watchedKey(m);
+		return key ? myWatchedMap.get(key) : undefined;
+	}
+
+	async function loadMyWatchedData() {
+		if (!isLoggedIn) return;
+		try {
+			const resp = await axios.get<Watched[]>("/watched");
+			const map = new Map<string, Watched>();
+			for (const w of resp.data) {
+				if (w.content) {
+					const type = w.content.type === "movie" ? "movie" : "tv";
+					map.set(`${w.content.tmdbId}-${type}`, w);
+				}
+				if ((w as any).game) {
+					map.set(`${(w as any).game.igdbId}-game`, w);
+				}
+			}
+			myWatchedMap = map;
+		} catch (err) {
+			console.error("loadMyWatchedData: Failed!", err);
+		}
+	}
 
 	let isFollowing = $derived(
 		!!store.follows?.find((f) => f.followedUser.id === Number(meta.id)),
@@ -107,6 +142,7 @@
 				.catch((err) => {
 					console.error("getPublicUser failed!", err);
 				});
+			loadMyWatchedData();
 		}
 	});
 
@@ -124,6 +160,15 @@
 		scroll.destroy();
 		dataLoader.abortReq("page destroyed");
 	});
+
+	// For ListView: overlay own watched data onto the shared list items
+	let itemsWithMyWatched: Media[] = $derived(
+		(dataLoader.state.data ?? []).map((m) => {
+			if (!isLoggedIn) return m;
+			const mine = getMyWatched(m);
+			return mine ? { ...m, watched: mine } : { ...m, watched: undefined };
+		}),
+	);
 </script>
 
 <svelte:head>
@@ -158,7 +203,7 @@
 
 {#if store.viewMode === "list"}
 	{#if dataLoader.state.data?.length > 0}
-		<ListView bind:items={dataLoader.state.data} />
+		<ListView items={itemsWithMyWatched} onWatchedUpdate={() => loadMyWatchedData()} />
 	{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
 		<div class="empty-list-wrap">
 			<div class="empty-list">
@@ -177,10 +222,11 @@
 			{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
 				{#if w}
 					<Poster
-						watched={dataLoader.state.data[i].watched}
+						watched={getMyWatched(w)}
 						media={w}
 						fluidSize={true}
 						disableInteraction={!isLoggedIn}
+						onUpdated={() => loadMyWatchedData()}
 					/>
 				{/if}
 			{/each}
