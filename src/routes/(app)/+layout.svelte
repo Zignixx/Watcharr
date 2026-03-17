@@ -661,6 +661,18 @@
 				}
 			}
 
+			button.viewToggle,
+			button.exportBtn {
+				&:hover,
+				&:focus-visible {
+					:global(path) {
+						fill: $text-color;
+						stroke: none;
+					}
+					opacity: 0.6;
+				}
+			}
+
 			button.filter,
 			button.sort {
 				position: relative;
