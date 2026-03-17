@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	gocache "github.com/robfig/go-cache"
@@ -35,6 +36,20 @@ const (
 
 // In-memory cache for computed recommendation lists (per user + content type).
 var recCache = gocache.New(recCacheTTL, recCacheCleanup)
+
+// recProgressMap tracks computation progress per user so the frontend can poll it.
+var recProgressMap sync.Map
+
+// RecProgress holds the current recommendation computation progress.
+type RecProgress struct {
+	Current   int  `json:"current"`
+	Total     int  `json:"total"`
+	Computing bool `json:"computing"`
+}
+
+func recProgressKey(userID uint, sourceUserID uint, contentType string) string {
+	return fmt.Sprintf("%d_%d_%s", userID, sourceUserID, contentType)
+}
 
 type ContentProvider interface {
 	Trending(t tmdb.TrendingType, pageNum int, region string) (tmdb.TMDBTrendingCombined, error)
@@ -459,8 +474,11 @@ func (s *Service) discoverRecommended(
 		slog.Debug("discoverRecommended: Serving from cache", "user", meta.UserID, "contentType", contentType, "total", len(allResults))
 	} else {
 		// Compute recommendations from scratch
+		progKey := recProgressKey(meta.UserID, sourceUserID, contentType)
+		recProgressMap.Store(progKey, &RecProgress{Computing: true})
 		var err error
-		allResults, err = s.computeRecommendations(contentType, sourceUserID, meta.UserID)
+		allResults, err = s.computeRecommendations(contentType, sourceUserID, meta.UserID, progKey)
+		recProgressMap.Delete(progKey)
 		if err != nil {
 			return err
 		}
@@ -506,7 +524,7 @@ func (s *Service) discoverRecommended(
 // calls TMDB for recommendations, scores and sorts them.
 // sourceUserID: the user whose watched list is used as source.
 // viewerUserID: the current user viewing (to exclude their own watched items).
-func (s *Service) computeRecommendations(contentType string, sourceUserID uint, viewerUserID uint) ([]domain.Media, error) {
+func (s *Service) computeRecommendations(contentType string, sourceUserID uint, viewerUserID uint, progKey string) ([]domain.Media, error) {
 	// Get source user's watched items with content loaded
 	var watched []entity.Watched
 	res := s.db.Model(&entity.Watched{}).
@@ -605,7 +623,19 @@ func (s *Service) computeRecommendations(contentType string, sourceUserID uint, 
 	}
 	recScores := make(map[int]*scoredRec)
 
-	for _, src := range sources {
+	// Update progress tracker with total source count
+	if p, ok := recProgressMap.Load(progKey); ok {
+		prog := p.(*RecProgress)
+		prog.Total = len(sources)
+	}
+
+	for i, src := range sources {
+		// Update progress after each source
+		if p, ok := recProgressMap.Load(progKey); ok {
+			prog := p.(*RecProgress)
+			prog.Current = i
+		}
+
 		for pg := 1; pg <= recTMDBPages; pg++ {
 			switch src.contentType {
 			case entity.MOVIE:
@@ -689,6 +719,18 @@ func (s *Service) computeRecommendations(contentType string, sourceUserID uint, 
 	}
 
 	return allMedia, nil
+}
+
+// GetRecommendProgress returns the current computation progress for a user's recommendations.
+func (s *Service) GetRecommendProgress(userID uint, sourceUserID uint, contentType string) RecProgress {
+	if sourceUserID == 0 {
+		sourceUserID = userID
+	}
+	key := recProgressKey(userID, sourceUserID, contentType)
+	if p, ok := recProgressMap.Load(key); ok {
+		return *p.(*RecProgress)
+	}
+	return RecProgress{}
 }
 
 // GetRecommendSources returns followed users who have at least 1 non-dropped watched entry.

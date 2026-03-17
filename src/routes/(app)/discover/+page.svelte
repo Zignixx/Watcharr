@@ -50,6 +50,78 @@
 		};
 	});
 
+	// --- Recommendation progress polling ---
+	let recProgress: { current: number; total: number; computing: boolean } | undefined = $state(undefined);
+	let isRecommended = $derived(
+		discoverFilter === DiscoverFilter.recommended || discoverFilter.startsWith("recommended:")
+	);
+
+	$effect(() => {
+		// Start polling when loading recommendations on first page
+		if (!isRecommended || !dataLoader.state.reqLoading) {
+			recProgress = undefined;
+			return;
+		}
+
+		let stopped = false;
+		const poll = async () => {
+			while (!stopped) {
+				try {
+					const params: Record<string, string> = {};
+					if (discoverType) params.type = discoverType;
+					if (discoverFilter.startsWith("recommended:")) {
+						params.sourceUserId = discoverFilter.split(":")[1];
+					}
+					const r = await axios.get<{ current: number; total: number; computing: boolean }>(
+						"/discover/recommend-progress",
+						{ params },
+					);
+					if (stopped) break;
+					if (r.data.computing) {
+						recProgress = r.data;
+					}
+				} catch {
+					// Ignore polling errors
+				}
+				// Wait 500ms before next poll
+				await new Promise((r) => setTimeout(r, 500));
+			}
+		};
+		poll();
+
+		return () => {
+			stopped = true;
+			recProgress = undefined;
+		};
+	});
+
+	const scroll = infScroll({ callback: onScrollToBottom });
+	const dataLoader = paginatedLoader<Media, undefined>(load);
+
+	let discoverFilter: string = $state(DiscoverFilter.trending);
+	let discoverType: SearchType | undefined = $derived.by(() => {
+		const t = page.url.searchParams.get("type");
+		if (t) {
+			return t as SearchType;
+		}
+		return SearchType.multi;
+	});
+	let nextLoadParams: DiscoverRequest = $derived.by(() => {
+		// Parse compound filter: "recommended:123" → filter=recommended, sourceUserId=123
+		let filter: DiscoverFilter = discoverFilter as DiscoverFilter;
+		let sourceUserId: number | undefined;
+		if (discoverFilter.startsWith("recommended:")) {
+			filter = DiscoverFilter.recommended;
+			sourceUserId = parseInt(discoverFilter.split(":")[1], 10);
+		}
+		return {
+			page: dataLoader.state.page + 1,
+			type: discoverType,
+			filter,
+			sourceUserId,
+		};
+	});
+
 	async function load(signal: GenericAbortSignal) {
 		console.debug("load: loadParams:", nextLoadParams);
 		if (nextLoadParams.page === dataLoader.state.page) {
@@ -165,7 +237,21 @@
 
 		{#if dataLoader.state.reqLoading}
 			<div style="margin-bottom: 60px;">
-				<Spinner />
+				{#if isRecommended && recProgress && recProgress.total > 0}
+					<div class="rec-progress">
+						<div class="rec-progress-bar">
+							<div
+								class="rec-progress-fill"
+								style="width: {(recProgress.current / recProgress.total) * 100}%"
+							></div>
+						</div>
+						<span class="rec-progress-text">
+							{recProgress.current} / {recProgress.total}
+						</span>
+					</div>
+				{:else}
+					<Spinner />
+				{/if}
 			</div>
 		{/if}
 
@@ -205,5 +291,32 @@
 			width: 100%;
 			max-width: 1200px;
 		}
+	}
+
+	.rec-progress {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.rec-progress-bar {
+		width: 200px;
+		height: 6px;
+		border-radius: 3px;
+		background: $bg-color-accent;
+		overflow: hidden;
+	}
+
+	.rec-progress-fill {
+		height: 100%;
+		border-radius: 3px;
+		background: $accent-color;
+		transition: width 0.3s ease;
+	}
+
+	.rec-progress-text {
+		font-size: 0.85rem;
+		color: $text-color-accent;
 	}
 </style>

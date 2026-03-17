@@ -1,6 +1,7 @@
 package discover
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -40,6 +41,8 @@ func (r *Router) AddRoutes() {
 	discover.GET("", router.WhereaboutsRequired(r.br.Cfg), router.PaginatedRequest(true), r.GetDiscover)
 	// Get followed users eligible as recommendation sources
 	discover.GET("/recommend-sources", r.GetRecommendSources)
+	// Get current recommendation computation progress
+	discover.GET("/recommend-progress", r.GetRecommendProgress)
 }
 
 // NOTE: The handler functions use `copier` to copy values from the response
@@ -112,4 +115,26 @@ func (r *Router) GetRecommendSources(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sources)
+}
+
+func (r *Router) GetRecommendProgress(c *gin.Context) {
+	userId := c.MustGet("userId").(uint)
+	contentType := c.Query("type")
+	sourceUserIdStr := c.Query("sourceUserId")
+	var sourceUserId uint
+	if sourceUserIdStr != "" {
+		if v, err := fmt.Sscanf(sourceUserIdStr, "%d", &sourceUserId); err != nil || v != 1 {
+			sourceUserId = 0
+		}
+	}
+	// Map frontend search types to our internal content type string
+	ct := ""
+	switch contentType {
+	case "movie":
+		ct = "movie"
+	case "show":
+		ct = "tv"
+	}
+	progress := r.service.GetRecommendProgress(userId, sourceUserId, ct)
+	c.JSON(http.StatusOK, progress)
 }
