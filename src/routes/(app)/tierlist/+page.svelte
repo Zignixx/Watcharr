@@ -38,6 +38,8 @@
 	let exporting = $state(false);
 	let showGradientModal = $state(false);
 	let selectedGradient: string | null = $state(null);
+	let gradientReversed = $state(false);
+	let gradientCustomTextColor: string | null = $state(null);
 
 	// Gradient presets: arrays of HSL color stops
 	const gradientPresets: { name: string; id: string; stops: [number, number, number][] }[] = [
@@ -330,7 +332,12 @@
 	function getGradientPreview(gradientId: string) {
 		const preset = gradientPresets.find((g) => g.id === gradientId);
 		if (!preset) return [];
-		return interpolateHSL(preset.stops, tiers.length);
+		const stops = gradientReversed ? [...preset.stops].reverse() : preset.stops;
+		const results = interpolateHSL(stops, tiers.length);
+		if (gradientCustomTextColor) {
+			return results.map((r) => ({ ...r, textColor: gradientCustomTextColor! }));
+		}
+		return results;
 	}
 
 	function applyGradient() {
@@ -343,6 +350,8 @@
 		}));
 		showGradientModal = false;
 		selectedGradient = null;
+		gradientReversed = false;
+		gradientCustomTextColor = null;
 	}
 
 	// Overlay state
@@ -1367,7 +1376,7 @@
 
 <!-- Auto Color Gradient Modal -->
 {#if showGradientModal}
-	<Modal title="Auto Color Gradient" onClose={() => { showGradientModal = false; selectedGradient = null; }}>
+	<Modal title="Auto Color Gradient" onClose={() => { showGradientModal = false; selectedGradient = null; gradientReversed = false; gradientCustomTextColor = null; }}>
 		<div class="gradient-modal">
 			<div class="gradient-options">
 				{#each gradientPresets as gp}
@@ -1377,7 +1386,7 @@
 						onclick={() => (selectedGradient = gp.id)}
 					>
 						<div class="gradient-swatch">
-							{#each interpolateHSL(gp.stops, Math.max(tiers.length, 4)) as c}
+							{#each interpolateHSL(gradientReversed ? [...gp.stops].reverse() : gp.stops, Math.max(tiers.length, 4)) as c}
 								<div style="background-color: {c.color}; flex: 1;"></div>
 							{/each}
 						</div>
@@ -1402,9 +1411,29 @@
 				</div>
 			{/if}
 
-			<button class="btn-save" onclick={applyGradient} disabled={!selectedGradient}>
-				Apply Gradient
-			</button>
+			<div class="gradient-actions">
+				<button class="btn-reverse" onclick={() => (gradientReversed = !gradientReversed)} title="Reverse gradient direction">
+					<Icon i="sort" wh={16} />
+					Reverse
+				</button>
+				<div class="text-color-toggle">
+					<button
+						class="btn-reverse"
+						class:active={gradientCustomTextColor !== null}
+						onclick={() => { gradientCustomTextColor = gradientCustomTextColor !== null ? null : '#ffffff'; }}
+						title="Override text color for all tiers"
+					>
+						<Icon i="pencil" wh={14} />
+						Text Color
+					</button>
+					{#if gradientCustomTextColor !== null}
+						<input type="color" bind:value={gradientCustomTextColor} class="text-color-picker" />
+					{/if}
+				</div>
+				<button class="btn-save" onclick={applyGradient} disabled={!selectedGradient}>
+					Apply Gradient
+				</button>
+			</div>
 		</div>
 	</Modal>
 {/if}
@@ -2038,6 +2067,25 @@
 		max-height: 280px;
 		overflow-y: auto;
 		padding-right: 4px;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(155, 155, 155, 0.4) transparent;
+
+		&::-webkit-scrollbar {
+			width: 6px;
+		}
+
+		&::-webkit-scrollbar-track {
+			background: transparent;
+		}
+
+		&::-webkit-scrollbar-thumb {
+			background-color: rgba(155, 155, 155, 0.4);
+			border-radius: 10px;
+
+			&:hover {
+				background-color: rgba(155, 155, 155, 0.6);
+			}
+		}
 	}
 
 	.gradient-option {
@@ -2111,6 +2159,55 @@
 		&:last-child {
 			border-bottom: none;
 		}
+	}
+
+	.gradient-actions {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.btn-reverse {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 16px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(128, 128, 128, 0.3);
+		background: rgba(128, 128, 128, 0.08);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 500;
+		width: auto;
+		transition: all 180ms ease;
+
+		&:hover {
+			background: rgba(128, 128, 128, 0.15);
+			border-color: rgba(128, 128, 128, 0.4);
+		}
+
+		&.active {
+			border-color: $accent-color-hover;
+			background: rgba(128, 128, 128, 0.12);
+		}
+	}
+
+	.text-color-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.text-color-picker {
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border: 1.5px solid rgba(128, 128, 128, 0.3);
+		border-radius: 8px;
+		cursor: pointer;
+		background: none;
 	}
 
 	.preset-section-label {

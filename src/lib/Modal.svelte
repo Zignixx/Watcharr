@@ -77,6 +77,25 @@
 			transition: margin 100ms ease;
 			outline: 2px solid $text-color;
 			overflow: auto;
+			scrollbar-width: thin;
+			scrollbar-color: rgba(155, 155, 155, 0.4) transparent;
+
+			&::-webkit-scrollbar {
+				width: 6px;
+			}
+
+			&::-webkit-scrollbar-track {
+				background: transparent;
+			}
+
+			&::-webkit-scrollbar-thumb {
+				background-color: rgba(155, 155, 155, 0.4);
+				border-radius: 10px;
+
+				&:hover {
+					background-color: rgba(155, 155, 155, 0.6);
+				}
+			}
 
 			h5 {
 				margin-bottom: 15px;
