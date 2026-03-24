@@ -1780,13 +1780,13 @@
 	.untiered-section {
 		position: fixed;
 		bottom: 0;
-		left: 0;
+		left: 240px;
 		right: 0;
 		z-index: 50;
 		background: $bg-color;
 		border-top: 1px solid rgba(128, 128, 128, 0.2);
 		box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
-		transition: opacity 200ms ease, transform 200ms ease;
+		transition: opacity 200ms ease, transform 200ms ease, left 200ms ease;
 
 		&.collapsed {
 			.untiered-items {
@@ -1875,10 +1875,26 @@
 	.overlay-hotzone {
 		position: fixed;
 		bottom: 0;
-		left: 0;
+		left: 240px;
 		right: 0;
 		height: 48px;
 		z-index: 49;
+		transition: left 200ms ease;
+	}
+
+	:global(.sidebar-collapsed) .untiered-section {
+		left: 64px;
+	}
+	:global(.sidebar-collapsed) .overlay-hotzone {
+		left: 64px;
+	}
+	@media screen and (max-width: 768px) {
+		.untiered-section {
+			left: 0;
+		}
+		.overlay-hotzone {
+			left: 0;
+		}
 	}
 
 	.untiered-items {

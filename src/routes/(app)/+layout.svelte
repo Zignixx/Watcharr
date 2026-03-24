@@ -6,15 +6,19 @@
 	import Spinner from "@/lib/Spinner.svelte";
 	import tooltip from "@/lib/actions/tooltip";
 	import DetailedMenu from "@/lib/nav/DetailedMenu.svelte";
-	import FaceMenu from "@/lib/nav/FaceMenu.svelte";
 	import FilterMenu from "@/lib/nav/FilterMenu.svelte";
 	import FollowingMenu from "@/lib/nav/FollowingMenu.svelte";
 	import SortMenu from "@/lib/nav/SortMenu.svelte";
 	import TagMenu from "@/lib/tag/TagMenu.svelte";
 	import TextImportModal from "@/lib/TextImportModal.svelte";
+	import AboutModal from "@/lib/nav/AboutModal.svelte";
+	import ProxyUserLogoutModal from "@/lib/logout/ProxyUserLogoutModal.svelte";
 	import { isTouch } from "@/lib/util/helpers";
+	import { parseTokenPayload, userHasPermission } from "@/lib/util/helpers";
+	import { clearWatcharrData } from "@/lib/logout";
+	import { notify } from "@/lib/util/notify";
 	import { store, defaultSort } from "@/store.svelte";
-	import { RatingSystem } from "@/types";
+	import { RatingSystem, UserPermission, UserType } from "@/types";
 	import axios from "axios";
 	import { onMount } from "svelte";
 	interface Props {
@@ -23,25 +27,49 @@
 
 	let { children }: Props = $props();
 
-	let navEl: HTMLElement | undefined = $state();
-	let mainSearchEl: HTMLInputElement | undefined = $state();
+	let searchEl: HTMLInputElement | undefined = $state();
 	let searchTimeout: number;
-	let subMenuShown = $state(false);
+
+	// Sidebar state
+	let sidebarCollapsed = $state(localStorage.getItem("sidebarCollapsed") === "true");
+	let mobileMenuOpen = $state(false);
+
+	// Submenu states
 	let filterMenuShown = $state(false);
 	let sortMenuShown = $state(false);
-	let followingMenuShown = $state(false);
 	let detailedMenuShown = $state(false);
 	let tagMenuShown = $state(false);
+	let followingMenuShown = $state(false);
 	let textImportShown = $state(false);
-	let scroll = window.scrollY;
+	let aboutModalOpen = $state(false);
+	let proxyUserLogoutShown = $state(false);
 
-	function handleProfileClick() {
-		if (!localStorage.getItem("token")) {
-			goto("/login");
-		} else {
-			closeAllSubMenus("sub");
-			subMenuShown = !subMenuShown;
-		}
+	// Derived state
+	let user = $derived(store.userInfo);
+	let isAdmin = $derived(user ? userHasPermission(user.permissions, UserPermission.PERM_ADMIN) : false);
+	let showContextToolbar = $derived(
+		page.url?.pathname === "/" ||
+		page.url?.pathname.includes("/lists/") ||
+		page.url?.pathname.includes("/tag/") ||
+		page.url?.pathname.startsWith("/search")
+	);
+	let showSortFilter = $derived(
+		page.url?.pathname === "/" ||
+		page.url?.pathname.includes("/lists/") ||
+		page.url?.pathname.includes("/tag/")
+	);
+	let showViewExport = $derived(
+		page.url?.pathname === "/" ||
+		page.url?.pathname.includes("/lists/")
+	);
+
+	function toggleSidebar() {
+		sidebarCollapsed = !sidebarCollapsed;
+		localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed));
+	}
+
+	function closeMobileMenu() {
+		mobileMenuOpen = false;
 	}
 
 	function handleSearch(ev: KeyboardEvent) {
@@ -79,23 +107,11 @@
 					preferMyList: "true",
 				});
 				if (page.route?.id === "/(app)/search" && currentSearchType) {
-					// If we are already on the search page, we can attempt
-					// to keep any existing type filter on the next query.
 					searchParams.set("type", currentSearchType);
 				}
-				// Enable autofocus before running `goto` because on chromium
-				// the .focus() call won't work, even after a timeout.
-				// Using autofocus seems to work. Disables after goto runs.
-				// https://github.com/sbondCo/Watcharr/issues/169
 				target.autofocus = true;
 				goto(`/search?${searchParams.toString()}`).then(() => {
-					// Use mainSearchEl if nav not split, otherwise use ev target.
-					if (!document.body.classList.contains("split-nav") && mainSearchEl) {
-						mainSearchEl.focus();
-						mainSearchEl.autofocus = false;
-					} else {
-						target?.focus();
-					}
+					target?.focus();
 					target.autofocus = false;
 				});
 			},
@@ -135,71 +151,18 @@
 	}
 
 	function closeAllSubMenus(except?: string) {
-		if (except !== "sub") subMenuShown = false;
 		if (except !== "filter") filterMenuShown = false;
 		if (except !== "sort") sortMenuShown = false;
-		if (except !== "following") followingMenuShown = false;
 		if (except !== "detailed") detailedMenuShown = false;
 		if (except !== "tag") tagMenuShown = false;
-	}
-
-	/**
-	 * Adds or removed `split-nav` tag to body depending
-	 * on how big the main search bar is.
-	 */
-	function decideOnNavSplit() {
-		// At ≤620px, CSS handles search visibility (inline hidden, .small shown).
-		// No need for split-nav class.
-		if (window.innerWidth <= 1050) {
-			document.body.classList.remove("split-nav");
-			return;
-		}
-		if (window.innerWidth <= 305) {
-			document.body.classList.add("split-nav");
-			return;
-		}
-		// Temporarily unsplit to measure the real search input width
-		const wasSplit = document.body.classList.contains("split-nav");
-		if (wasSplit) document.body.classList.remove("split-nav");
-		const bigInput = navEl?.querySelector("input:not(.small)");
-		if (bigInput) {
-			const b = bigInput.getBoundingClientRect();
-			console.debug("decideOnNavSplit: bigInput width:", b.width);
-			if (b.width <= 45) {
-				document.body.classList.add("split-nav");
-				console.debug("decideOnNavSplit: Splitting nav.");
-			} else {
-				console.debug("decideOnNavSplit: Unsplitting nav.");
-			}
-		} else {
-			console.warn("decideOnNavSplit: bigInput not found!", bigInput);
-			if (wasSplit) document.body.classList.add("split-nav");
-		}
-	}
-
-	function docOnScroll() {
-		if (scroll > window.scrollY) {
-			navEl?.classList.remove("scrolled-down");
-			document.body.classList.add("nav-shown");
-		} else {
-			navEl?.classList.add("scrolled-down");
-			document.body.classList.remove("nav-shown");
-			closeAllSubMenus();
-		}
-		scroll = window.scrollY;
+		if (except !== "following") followingMenuShown = false;
 	}
 
 	function focusSearch() {
 		try {
-			if (!mainSearchEl) {
-				console.warn("focusSearch: mainSearchEl not defined!");
-				return;
-			}
-			if (document.activeElement === mainSearchEl) {
-				console.debug("focusSearch: mainSearchEl is already focused.");
-				return;
-			}
-			mainSearchEl.focus();
+			if (!searchEl) return;
+			if (document.activeElement === searchEl) return;
+			searchEl.focus();
 		} catch (err) {
 			console.error("focusSearch: Failed!", err);
 		}
@@ -216,568 +179,771 @@
 		}
 	}
 
+	function logout() {
+		if (user?.type === UserType.Proxy) {
+			proxyUserLogoutShown = true;
+			return;
+		}
+		clearWatcharrData();
+		goto("/login");
+	}
+
+	function shareWatchedList() {
+		const nid = notify({ type: "loading", text: "Getting link" });
+		const ud = parseTokenPayload();
+		if (ud?.userId && ud?.username) {
+			const shareLink = `${window.location.origin}/lists/${ud.userId}/${ud.username}`;
+			navigator.clipboard
+				.writeText(shareLink)
+				.then(() => {
+					notify({ id: nid, type: "success", text: "Copied share link" });
+				})
+				.catch((r) => {
+					console.error("Failed to copy list share link", r);
+					notify({
+						id: nid,
+						type: "error",
+						text: `Failed to copy share link:<br/><a href="${shareLink}" target="_blank">${shareLink}</a>`,
+						time: 20000,
+					});
+				});
+		} else {
+			notify({ id: nid, type: "error", text: "Failed to get link" });
+		}
+	}
+
 	afterNavigate(() => {
-		decideOnNavSplit();
 		closeAllSubMenus();
+		closeMobileMenu();
 	});
 
 	onMount(() => {
-		if (navEl) {
-			decideOnNavSplit();
-			window.addEventListener("resize", decideOnNavSplit);
-			window.document.addEventListener("scroll", docOnScroll);
-			window.document.addEventListener("keydown", handleGlobalKeybind);
-
-			return () => {
-				window.removeEventListener("resize", decideOnNavSplit);
-				window.document.removeEventListener("scroll", docOnScroll);
-				window.document.removeEventListener("keydown", handleGlobalKeybind);
-			};
-		} else {
-			console.error(
-				"navEl doesn't exist, failed to initialize up/down listener",
-			);
-		}
+		// Clean up old nav classes from previous layout
+		document.body.classList.remove("split-nav", "nav-shown");
+		window.document.addEventListener("keydown", handleGlobalKeybind);
+		return () => {
+			window.document.removeEventListener("keydown", handleGlobalKeybind);
+		};
 	});
 </script>
 
-<nav bind:this={navEl}>
-	<div class="wrapper">
-		<a href="/">
-			<span class="large">Watcharr</span>
-			<span class="small">W</span>
-		</a>
-		{#if isLoggedIn}
-			<div class="search">
+<!-- Mobile top bar -->
+<header class="mobile-header">
+	<button class="plain mobile-menu-toggle" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+		<Icon i="menu" wh={22} />
+	</button>
+	<a href="/" class="mobile-logo">Watcharr</a>
+	<button class="plain mobile-search-toggle" onclick={focusSearch}>
+		<Icon i="search" wh={20} />
+	</button>
+</header>
+
+<!-- Sidebar backdrop (mobile) -->
+{#if mobileMenuOpen}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="sidebar-backdrop" onclick={closeMobileMenu} onkeydown={() => {}}></div>
+{/if}
+
+<!-- Sidebar -->
+<aside class="sidebar" class:collapsed={sidebarCollapsed} class:open={mobileMenuOpen}>
+	<div class="sidebar-header">
+		{#if !sidebarCollapsed}
+			<a href="/" class="sidebar-logo">
+				<span class="logo-full">Watcharr</span>
+			</a>
+		{/if}
+		<button class="plain collapse-btn" onclick={toggleSidebar} use:tooltip={{ text: sidebarCollapsed ? "Expand" : "Collapse", pos: "right" }}>
+			<Icon i="chevron" wh={18} facing={sidebarCollapsed ? "right" : undefined} />
+		</button>
+	</div>
+
+	{#if isLoggedIn}
+		<div class="sidebar-search">
+			<div class="search-wrapper">
+				<Icon i="search" wh={16} />
 				<input
-					bind:this={mainSearchEl}
+					bind:this={searchEl}
 					type="text"
-					placeholder="Search"
+					placeholder="Search..."
 					bind:value={store.searchQuery}
 					onkeydown={handleSearch}
 				/>
-				<Icon i="search" wh={19} />
 			</div>
-		{:else}
-			<div class="search"></div>
-		{/if}
-		<div class="btns">
-			<!-- View toggle + Export -->
-			{#if page.url?.pathname === "/" || page.url?.pathname.includes("/lists/")}
-				<button
-					class="plain other viewToggle"
-					onclick={() => { store.viewMode = store.viewMode === "grid" ? "list" : "grid"; }}
-					use:tooltip={{
-						text: store.viewMode === "grid" ? "List View" : "Grid View",
-						pos: "bot",
-					}}
-				>
-					<Icon i={store.viewMode === "grid" ? "view-list" : "view-grid"} />
-				</button>
+		</div>
+
+		<nav class="sidebar-nav">
+			<a href="/" class="nav-item" class:active={page.url?.pathname === "/"} use:tooltip={{ text: "Home", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="home" wh={20} />
+				<span>Home</span>
+			</a>
+			<a href="/discover" class="nav-item" class:active={page.url?.pathname === "/discover"} use:tooltip={{ text: "Discover", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="compass" wh={20} />
+				<span>Discover</span>
+			</a>
+			{#if store.userSettings?.ratingSystem === RatingSystem.Tierlist}
+				<a href="/tierlist" class="nav-item" class:active={page.url?.pathname === "/tierlist"} use:tooltip={{ text: "Tierlist", pos: "right", condition: sidebarCollapsed }}>
+					<Icon i="star" wh={20} />
+					<span>Tierlist</span>
+				</a>
 			{/if}
+			<button class="plain nav-item" onclick={() => (textImportShown = !textImportShown)} use:tooltip={{ text: "Import", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="document" wh={20} />
+				<span>Import</span>
+			</button>
 			{#if page.url?.pathname === "/"}
-				<button
-					class="plain other exportBtn"
-					onclick={() => {
-						window.dispatchEvent(new CustomEvent("watcharr-export"));
-					}}
-					use:tooltip={{
-						text: "Export",
-						pos: "bot",
-					}}
-				>
-					<Icon i="download" />
+				<button class="plain nav-item" onclick={() => { window.dispatchEvent(new CustomEvent("watcharr-export")); }} use:tooltip={{ text: "Export", pos: "right", condition: sidebarCollapsed }}>
+					<Icon i="download" wh={20} />
+					<span>Export</span>
 				</button>
 			{/if}
-			<!-- Detailed posters -->
-			{#if page.url?.pathname === "/" || page.url?.pathname.startsWith("/search") || page.url?.pathname.includes("/lists/")}
-				<button
-					class="plain other detailedView"
-					onclick={() => {
-						closeAllSubMenus("detailed");
-						detailedMenuShown = !detailedMenuShown;
-					}}
-					use:tooltip={{
-						text: "Detailed View",
-						pos: "bot",
-						condition: !detailedMenuShown,
-					}}
-				>
-					<Icon i="eye" />
-					{#if store.activeFilters?.type?.length > 0 || store.activeFilters?.status?.length > 0}
-						<div class="indicator"></div>
-					{/if}
-				</button>
-				{#if detailedMenuShown}
-					<DetailedMenu />
+
+			<div class="nav-divider"></div>
+			<div class="nav-label">Library</div>
+
+			<button
+				class="plain nav-item"
+				class:active={tagMenuShown}
+				onclick={() => { closeAllSubMenus("tag"); tagMenuShown = !tagMenuShown; }}
+				use:tooltip={{ text: "Tags", pos: "right", condition: sidebarCollapsed }}
+			>
+				<Icon i="tag" wh={20} />
+				<span>Tags</span>
+				{#if store.tags?.length > 0}
+					<span class="badge">{store.tags.length}</span>
 				{/if}
-			{/if}
-			<!-- Show on watched list and shared/followed watched lists -->
-			{#if page.url?.pathname === "/" || page.url?.pathname.includes("/lists/") || page.url?.pathname.includes("/tag/")}
-				<button
-					class="plain other sort"
-					onclick={() => {
-						closeAllSubMenus("sort");
-						sortMenuShown = !sortMenuShown;
-					}}
-					use:tooltip={{ text: "Sort", pos: "bot", condition: !sortMenuShown }}
-				>
-					<Icon i="sort" />
-					<!-- Show indicator if not equal to default and second item in array is not falsy -->
-					{#if store.activeSort?.length === 2 && store.activeSort[1] && JSON.stringify(store.activeSort) !== JSON.stringify(defaultSort)}
-						<div class="indicator"></div>
-					{/if}
-				</button>
-				<button
-					class="plain other filter"
-					onclick={() => {
-						closeAllSubMenus("filter");
-						filterMenuShown = !filterMenuShown;
-					}}
-					use:tooltip={{
-						text: "Filter",
-						pos: "bot",
-						condition: !filterMenuShown,
-					}}
-				>
-					<Icon i="filter" />
-					{#if store.activeFilters?.type?.length > 0 || store.activeFilters?.status?.length > 0}
-						<div class="indicator"></div>
-					{/if}
-				</button>
-				{#if sortMenuShown}
-					<SortMenu />
-				{/if}
-				{#if filterMenuShown}
-					<FilterMenu />
-				{/if}
-			{/if}
-			{#if isLoggedIn}
-				{#if store.userSettings?.ratingSystem === RatingSystem.Tierlist}
-					{#if page.url?.pathname === "/tierlist"}
-						<button
-							class="plain other tierlist"
-							onclick={() => goto("/")}
-							use:tooltip={{ text: "Watched List", pos: "bot" }}
-						>
-							<Icon i="view-list" wh={24} />
-						</button>
-					{:else}
-						<button
-							class="plain other tierlist"
-							onclick={() => goto("/tierlist")}
-							use:tooltip={{ text: "Tierlist", pos: "bot" }}
-						>
-							<Icon i="star" wh={24} />
-						</button>
-					{/if}
-				{/if}
-				<button
-					class="plain other tag"
-					onclick={() => {
-						closeAllSubMenus("tag");
-						tagMenuShown = !tagMenuShown;
-					}}
-					use:tooltip={{ text: "Tags", pos: "bot", condition: !tagMenuShown }}
-				>
-					<Icon i="tag" />
-				</button>
-				{#if tagMenuShown}
+			</button>
+			{#if tagMenuShown}
+				<div class="sidebar-submenu">
 					<TagMenu
 						onTagClick={(tag) => {
 							goto(`/tag/${tag.id}`);
 							tagMenuShown = false;
 						}}
 						showManageBtn={true}
+						menuConfig={{ width: "200px", right: "unset", top: "0", arrowLeft: "unset", arrowRight: "unset" }}
 					/>
+				</div>
+			{/if}
+
+			<button
+				class="plain nav-item"
+				class:active={followingMenuShown}
+				onclick={() => { closeAllSubMenus("following"); followingMenuShown = !followingMenuShown; }}
+				use:tooltip={{ text: "Following", pos: "right", condition: sidebarCollapsed }}
+			>
+				<Icon i="people" wh={20} />
+				<span>Following</span>
+				{#if store.follows?.length > 0}
+					<span class="badge">{store.follows.length}</span>
 				{/if}
-				<button
-					class="plain other textImport"
-					onclick={() => (textImportShown = !textImportShown)}
-					use:tooltip={{ text: "Import List", pos: "bot" }}
-				>
-					<Icon i="document" wh={22} />
-				</button>
-				<button
-					class="plain other discover"
-					onclick={() => goto("/discover")}
-					use:tooltip={{ text: "Discover", pos: "bot" }}
-				>
-					<Icon i="compass" wh={26} />
-				</button>
-				<button
-					class="plain other following"
-					onclick={() => {
-						closeAllSubMenus("following");
-						followingMenuShown = !followingMenuShown;
-					}}
-					use:tooltip={{
-						text: "Following",
-						pos: "bot",
-						condition: !followingMenuShown,
-					}}
-				>
-					<Icon i="people" wh={26} />
-				</button>
-				{#if followingMenuShown}
+			</button>
+			{#if followingMenuShown}
+				<div class="sidebar-submenu">
 					<FollowingMenu close={() => (followingMenuShown = false)} />
-				{/if}
-				<button class="plain face" onclick={handleProfileClick}>:)</button>
-				{#if subMenuShown}
-					<FaceMenu />
+				</div>
+			{/if}
+		</nav>
+
+		<div class="sidebar-footer">
+			{#if !store.userSettings?.private}
+				<button class="plain nav-item" onclick={shareWatchedList} use:tooltip={{ text: "Share List", pos: "right", condition: sidebarCollapsed }}>
+					<Icon i="share" wh={18} />
+					<span>Share List</span>
+				</button>
+			{/if}
+			{#if isAdmin}
+				<a href="/server" class="nav-item" class:active={page.url?.pathname === "/server"} use:tooltip={{ text: "Settings", pos: "right", condition: sidebarCollapsed }}>
+					<Icon i="settings" wh={18} />
+					<span>Settings</span>
+				</a>
+				<a href="/manage_users" class="nav-item" class:active={page.url?.pathname === "/manage_users"} use:tooltip={{ text: "Users", pos: "right", condition: sidebarCollapsed }}>
+					<Icon i="people" wh={18} />
+					<span>Users</span>
+				</a>
+				{#if store.serverFeatures?.sonarr || store.serverFeatures?.radarr}
+					<a href="/arr_requests" class="nav-item" class:active={page.url?.pathname === "/arr_requests"} use:tooltip={{ text: "Requests", pos: "right", condition: sidebarCollapsed }}>
+						<Icon i="ticket" wh={18} />
+						<span>Requests</span>
+					</a>
 				{/if}
 			{/if}
+
+			<div class="nav-divider"></div>
+
+			<a href="/profile" class="nav-item profile-item" class:active={page.url?.pathname === "/profile"} use:tooltip={{ text: user?.username ?? "Profile", pos: "right", condition: sidebarCollapsed }}>
+				<span class="avatar">:)</span>
+				<span class="profile-name">{user?.username ?? "Profile"}</span>
+			</a>
+
+			<button class="plain nav-item" onclick={logout} use:tooltip={{ text: "Logout", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="logout" wh={18} />
+				<span>Logout</span>
+			</button>
+
+			<div class="sidebar-about">
+				<button class="about-link" onclick={() => (aboutModalOpen = !aboutModalOpen)}>about</button>
+				<span class="about-sep">|</span>
+				<a class="about-link" href="https://github.com/sbondCo/Watcharr/releases" target="_blank">
+					v{__WATCHARR_VERSION__}
+				</a>
+			</div>
 		</div>
-	</div>
-	{#if isLoggedIn}
-		<input
-			class="small"
-			type="text"
-			placeholder="Search"
-			bind:value={store.searchQuery}
-			onkeydown={handleSearch}
-		/>
 	{/if}
-</nav>
+</aside>
 
-{#if textImportShown}
-	<TextImportModal onClose={() => (textImportShown = false)} />
-{/if}
+<!-- Main content -->
+<div class="app-content" class:sidebar-collapsed={sidebarCollapsed}>
+	{#if showContextToolbar && isLoggedIn}
+		<div class="content-toolbar">
+			<div class="toolbar-group">
+				{#if showViewExport}
+					<button
+						class="toolbar-btn"
+						onclick={() => { store.viewMode = store.viewMode === "grid" ? "list" : "grid"; }}
+						use:tooltip={{ text: store.viewMode === "grid" ? "List View" : "Grid View", pos: "bot" }}
+					>
+						<Icon i={store.viewMode === "grid" ? "view-list" : "view-grid"} wh={18} />
+					</button>
+				{/if}
+				{#if showSortFilter}
+					<button
+						class="toolbar-btn"
+						class:active={sortMenuShown}
+						onclick={() => { closeAllSubMenus("sort"); sortMenuShown = !sortMenuShown; }}
+					>
+						<Icon i="sort" wh={18} />
+						<span>Sort</span>
+						{#if store.activeSort?.length === 2 && store.activeSort[1] && JSON.stringify(store.activeSort) !== JSON.stringify(defaultSort)}
+							<div class="indicator"></div>
+						{/if}
+					</button>
+					<button
+						class="toolbar-btn"
+						class:active={filterMenuShown}
+						onclick={() => { closeAllSubMenus("filter"); filterMenuShown = !filterMenuShown; }}
+					>
+						<Icon i="filter" wh={18} />
+						<span>Filter</span>
+						{#if store.activeFilters?.type?.length > 0 || store.activeFilters?.status?.length > 0}
+							<div class="indicator"></div>
+						{/if}
+					</button>
+					{#if sortMenuShown}
+						<SortMenu />
+					{/if}
+					{#if filterMenuShown}
+						<FilterMenu />
+					{/if}
+				{/if}
+				{#if showContextToolbar}
+					<button
+						class="toolbar-btn"
+						class:active={detailedMenuShown}
+						onclick={() => { closeAllSubMenus("detailed"); detailedMenuShown = !detailedMenuShown; }}
+					>
+						<Icon i="eye" wh={18} />
+						<span>Details</span>
+					</button>
+					{#if detailedMenuShown}
+						<DetailedMenu />
+					{/if}
+				{/if}
 
-{#await getInitialData()}
-	<Spinner />
-{:then}
-	{@render children?.()}
-{:catch err}
-	<Error
-		pretty="Couldn't fetch app data!"
-		error={err}
-		onRetry={() => {
-			location.reload();
-		}}
-	/>
-{/await}
+			</div>
+		</div>
+	{/if}
+
+	{#if textImportShown}
+		<TextImportModal onClose={() => (textImportShown = false)} />
+	{/if}
+
+	{#if aboutModalOpen}
+		<AboutModal onClose={() => (aboutModalOpen = false)} />
+	{/if}
+
+	{#if proxyUserLogoutShown}
+		<ProxyUserLogoutModal onClose={() => (proxyUserLogoutShown = false)} />
+	{/if}
+
+	{#await getInitialData()}
+		<Spinner />
+	{:then}
+		{@render children?.()}
+	{:catch err}
+		<Error
+			pretty="Couldn't fetch app data!"
+			error={err}
+			onRetry={() => {
+				location.reload();
+			}}
+		/>
+	{/await}
+</div>
 
 <style lang="scss">
-	nav {
-		display: flex;
-		flex-flow: column;
-		margin-bottom: 20px;
-		padding: 10px 20px;
-		position: sticky;
+	/* ===== SIDEBAR ===== */
+	.sidebar {
+		position: fixed;
 		top: 0;
-		gap: 3px;
+		left: 0;
+		width: 240px;
+		height: 100dvh;
+		display: flex;
+		flex-direction: column;
+		background-color: $bg-color;
+		border-right: 1px solid rgba(128, 128, 128, 0.15);
 		z-index: 99990;
-		transition: top 200ms ease-in-out;
-		max-width: 100vw;
-		@include nav-blur;
+		transition: width 200ms ease, transform 200ms ease;
+		overflow: hidden;
 
-		&:global(.scrolled-down) {
-			top: -110px;
+		&.collapsed {
+			width: 64px;
+
+			.sidebar-header { justify-content: center; }
+			.sidebar-search { padding: 0 8px; }
+			.search-wrapper input { opacity: 0; width: 0; padding: 0; }
+			.search-wrapper { justify-content: center; padding: 8px; }
+			.nav-item span:not(.avatar) { display: none; }
+			.nav-item .badge { display: none; }
+			.nav-item { justify-content: center; padding: 10px; }
+			.nav-label { display: none; }
+			.sidebar-about { display: none; }
+			.profile-item .profile-name { display: none; }
+			.sidebar-submenu { display: none; }
 		}
 
-		.wrapper {
-			display: flex;
-			flex-flow: row;
-			gap: 20px;
-			justify-content: space-between;
-			align-items: center;
-			overflow-x: clip;
+		@media screen and (max-width: 768px) {
+			transform: translateX(-100%);
+			width: 280px;
+			box-shadow: none;
 
-			a,
-			.btns {
-				/* This makes the logo on left and icons on right the same
-				width, ensuring the main search bar can stay truly centered
-				when possible. */
-				flex: 1;
-				min-width: 0;
-			}
-
-			@media screen and (max-width: 435px) {
-				gap: 15px;
-			}
-
-			/* Slowly decrease the gap to ensure the main search bar doesn't get big enough again and pop back up in the nav. */
-			body.split-nav & {
-				@media screen and (max-width: 380px) {
-					gap: 10px;
-				}
-
-				@media screen and (max-width: 375px) {
-					gap: 8px;
-				}
-
-				@media screen and (max-width: 370px) {
-					gap: 5px;
-				}
-
-				@media screen and (max-width: 350px) {
-					gap: 0;
-				}
+			&.open {
+				transform: translateX(0);
+				box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
 			}
 		}
+	}
 
-		a {
+	.sidebar-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 16px 14px 8px;
+		min-height: 56px;
+		flex-shrink: 0;
+
+		.sidebar-logo {
 			text-decoration: none;
-			font-family:
-				"Shrikhand",
-				system-ui,
-				-apple-system,
-				BlinkMacSystemFont;
-			font-size: 35px;
-			transition:
-				-webkit-text-stroke 150ms ease,
-				color 150ms ease,
-				font-weight 150ms ease;
+			font-family: "Shrikhand", system-ui, -apple-system, BlinkMacSystemFont;
+			font-size: 24px;
+			color: $text-color;
+			transition: opacity 150ms ease;
+			white-space: nowrap;
+			overflow: hidden;
 
-			&:hover,
-			&:focus-visible {
-				color: $bg-color;
-				-webkit-text-stroke: 3px $text-color;
-				font-weight: bold;
-			}
-
-			span.large {
-				display: block;
-				width: 185.2px;
-			}
-
-			span.small {
-				display: none;
-				width: 40px;
-			}
-
-			@media screen and (max-width: 620px) {
-				span.large {
-					display: none;
-				}
-				span.small {
-					display: block;
-				}
+			&:hover {
+				opacity: 0.7;
 			}
 		}
 
-		.search {
-			width: 100%;
-			position: relative;
+		.collapse-btn {
+			flex-shrink: 0;
+			width: 28px;
+			height: 28px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			border-radius: 6px;
+			border: none;
+			background: none;
+			opacity: 0.5;
+			transition: opacity 150ms ease, background-color 150ms ease;
 
-			// Make the box look a little more centered, inline with the rest of the nav items.
-			margin-bottom: 2px;
+			&:hover, &:focus-visible {
+				opacity: 1;
+				background-color: rgba(128, 128, 128, 0.12);
+				color: $text-color;
+			}
+
+			@media screen and (max-width: 768px) {
+				display: none;
+			}
+		}
+	}
+
+	.sidebar-search {
+		padding: 4px 12px 8px;
+		flex-shrink: 0;
+
+		.search-wrapper {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			background: rgba(128, 128, 128, 0.1);
+			border: 1px solid rgba(128, 128, 128, 0.15);
+			border-radius: 8px;
+			padding: 8px 12px;
+			transition: border-color 200ms ease, background-color 200ms ease;
+
+			&:focus-within {
+				border-color: rgba(128, 128, 128, 0.4);
+				background: rgba(128, 128, 128, 0.15);
+			}
 
 			:global(svg) {
-				display: none;
-				position: absolute;
-				top: 50%;
-				left: 50%;
-				transform: translate(-50%, -50%);
-				pointer-events: none;
-				user-select: none;
+				flex-shrink: 0;
+				opacity: 0.5;
 			}
 
-			input:focus-within + :global(svg),
-			input:not(:placeholder-shown) + :global(svg) {
-				display: none;
-			}
+			input {
+				width: 100%;
+				background: none;
+				border: none;
+				outline: none;
+				color: $text-color;
+				font-size: 13px;
+				font-weight: 500;
+				padding: 0;
+				box-shadow: none;
+				text-align: left;
 
-			@media screen and (min-width: 666px) {
-				max-width: 250px;
-			}
-
-			@media screen and (max-width: 666px) {
-				& input:not(.small) {
-					width: 100%;
+				&::placeholder {
+					color: $placeholder-color;
 				}
 
-				&:focus-within + .btns button:not(.face) {
+				&:hover, &:focus {
+					box-shadow: none;
+				}
+			}
+		}
+	}
+
+	.sidebar-nav {
+		display: flex;
+		flex-direction: column;
+		padding: 4px 8px;
+		gap: 2px;
+		flex: 1;
+		overflow-y: auto;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(155, 155, 155, 0.3) transparent;
+
+		&::-webkit-scrollbar { width: 4px; }
+		&::-webkit-scrollbar-track { background: transparent; }
+		&::-webkit-scrollbar-thumb {
+			background-color: rgba(155, 155, 155, 0.3);
+			border-radius: 10px;
+		}
+	}
+
+	.nav-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 9px 14px;
+		border-radius: 8px;
+		color: $text-color;
+		text-decoration: none;
+		font-size: 13.5px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background-color 150ms ease, opacity 150ms ease;
+		opacity: 0.7;
+		white-space: nowrap;
+		overflow: hidden;
+		width: auto;
+		border: none;
+		background: none;
+		text-align: left;
+		justify-content: flex-start;
+
+		:global(svg) {
+			flex-shrink: 0;
+			width: auto;
+			height: auto;
+		}
+
+		&:hover, &:focus-visible {
+			background-color: rgba(128, 128, 128, 0.1);
+			color: $text-color;
+			fill: $text-color;
+			opacity: 1;
+		}
+
+		&.active {
+			background-color: rgba(128, 128, 128, 0.15);
+			color: $text-color;
+			fill: $text-color;
+			opacity: 1;
+			font-weight: 600;
+			border-color: transparent;
+		}
+
+		.badge {
+			margin-left: auto;
+			font-size: 11px;
+			font-weight: 600;
+			background: rgba(128, 128, 128, 0.15);
+			padding: 1px 7px;
+			border-radius: 10px;
+			opacity: 0.7;
+		}
+	}
+
+	.nav-divider {
+		height: 1px;
+		background: rgba(128, 128, 128, 0.12);
+		margin: 6px 12px;
+	}
+
+	.nav-label {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		opacity: 0.35;
+		padding: 4px 14px 2px;
+	}
+
+	.sidebar-submenu {
+		position: relative;
+		margin-left: 12px;
+		margin-bottom: 4px;
+
+		:global(.menu) {
+			position: relative;
+			top: 0 !important;
+			right: auto !important;
+			left: 0;
+			width: 100%;
+			border: 1px solid rgba(128, 128, 128, 0.15);
+			border-radius: 8px;
+
+			:global(.arrow) {
+				display: none;
+			}
+		}
+	}
+
+	.sidebar-footer {
+		display: flex;
+		flex-direction: column;
+		padding: 4px 8px 12px;
+		gap: 2px;
+		flex-shrink: 0;
+		border-top: 1px solid rgba(128, 128, 128, 0.1);
+
+		.profile-item {
+			.avatar {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 20px;
+				height: 20px;
+				font-family: "Shrikhand", system-ui, -apple-system, BlinkMacSystemFont;
+				font-size: 11px;
+				transform: rotate(90deg);
+				background: rgba(128, 128, 128, 0.12);
+				border-radius: 50%;
+				flex-shrink: 0;
+			}
+
+			.profile-name {
+				font-weight: 600;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+		}
+	}
+
+	.sidebar-about {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 14px;
+		opacity: 0.35;
+		font-size: 11px;
+
+		.about-link {
+			color: $text-color;
+			text-decoration: none;
+			cursor: pointer;
+			background: none;
+			border: none;
+			padding: 0;
+			font-size: 11px;
+			font-weight: 500;
+			width: auto;
+			justify-content: flex-start;
+
+			&:hover, &:focus-visible {
+				opacity: 0.7;
+				background: none;
+				color: $text-color;
+			}
+		}
+
+		.about-sep {
+			opacity: 0.5;
+		}
+	}
+
+	/* ===== MOBILE HEADER ===== */
+	.mobile-header {
+		display: none;
+		position: sticky;
+		top: 0;
+		z-index: 99989;
+		align-items: center;
+		justify-content: space-between;
+		padding: 10px 16px;
+		@include nav-blur;
+
+		.mobile-logo {
+			font-family: "Shrikhand", system-ui, -apple-system, BlinkMacSystemFont;
+			font-size: 22px;
+			color: $text-color;
+			text-decoration: none;
+		}
+
+		.mobile-menu-toggle,
+		.mobile-search-toggle {
+			width: auto;
+			padding: 6px;
+			border: none;
+			background: none;
+			opacity: 0.7;
+
+			&:hover, &:focus-visible {
+				opacity: 1;
+				background: none;
+				color: $text-color;
+			}
+		}
+
+		@media screen and (max-width: 768px) {
+			display: flex;
+		}
+	}
+
+	.sidebar-backdrop {
+		display: none;
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100dvw;
+		height: 100dvh;
+		background: rgba(0, 0, 0, 0.5);
+		z-index: 99989;
+		backdrop-filter: blur(2px);
+
+		@media screen and (max-width: 768px) {
+			display: block;
+		}
+	}
+
+	/* ===== MAIN CONTENT ===== */
+	.app-content {
+		margin-left: 240px;
+		min-height: 100dvh;
+		transition: margin-left 200ms ease;
+		padding: 0 20px 20px;
+
+		&.sidebar-collapsed {
+			margin-left: 64px;
+		}
+
+		@media screen and (max-width: 768px) {
+			margin-left: 0 !important;
+		}
+	}
+
+	/* ===== CONTENT TOOLBAR ===== */
+	.content-toolbar {
+		display: flex;
+		align-items: center;
+		padding: 12px 0;
+		position: sticky;
+		top: 0;
+		z-index: 100;
+		@include nav-blur;
+
+		@media screen and (max-width: 768px) {
+			top: 48px;
+		}
+
+		.toolbar-group {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			flex-wrap: wrap;
+			position: relative;
+
+			:global(.menu) {
+				top: 42px !important;
+				right: auto !important;
+				left: 0;
+				z-index: 101;
+				border: 1px solid rgba(128, 128, 128, 0.2) !important;
+				border-radius: 10px;
+
+				:global(.arrow) {
 					display: none;
 				}
 			}
+		}
+	}
 
-			// Hide inline search early — .small input below wrapper takes over
-			@media screen and (max-width: 1050px) {
+	.toolbar-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 8px;
+		border: 1px solid rgba(128, 128, 128, 0.15);
+		background: rgba(128, 128, 128, 0.06);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 500;
+		width: auto;
+		justify-content: center;
+		transition: all 150ms ease;
+		position: relative;
+
+		:global(svg) {
+			width: auto;
+			height: auto;
+		}
+
+		&:hover, &:focus-visible {
+			background: rgba(128, 128, 128, 0.12);
+			border-color: rgba(128, 128, 128, 0.25);
+			color: $text-color;
+			fill: $text-color;
+			opacity: 1;
+		}
+
+		&.active {
+			background: rgba(128, 128, 128, 0.15);
+			border-color: rgba(128, 128, 128, 0.3);
+			color: $text-color;
+		}
+
+		span {
+			@media screen and (max-width: 480px) {
 				display: none;
 			}
 		}
 
-		:global(body.split-nav) & {
-			.search {
-				/* Collapse to zero width so it doesn't cause overflow.
-				   decideOnNavSplit temporarily unsplits to measure. */
-				flex: 0 0 0px;
-				min-width: 0;
-				overflow: hidden;
-				opacity: 0;
-				visibility: hidden;
-			}
-
-			input.small {
-				display: block;
-			}
-		}
-
-		input {
-			width: 100%;
-			font-weight: bold;
-			text-align: center;
-			box-shadow: 4px 4px 0px 0px $text-color;
-			text-overflow: ellipsis;
-			transition:
-				width 150ms ease,
-				box-shadow 150ms ease;
-
-			&.small {
-				display: none;
-				margin-left: auto;
-				margin-right: auto;
-
-				// Show the below-wrapper search bar
-				@media screen and (max-width: 1050px) {
-					display: block;
-					width: 100%;
-				}
-			}
-
-			&:hover,
-			&:focus {
-				box-shadow: 2px 2px 0px 0px $text-color;
-			}
-
-			@media screen and (max-width: 290px) {
-				&.small {
-					width: 100%;
-				}
-			}
-		}
-
-		.btns {
-			display: flex;
-			flex-flow: row;
-			justify-content: end;
-			/* gap: 20px; */
-
-			button.other {
-				padding-top: 2px;
-				width: 28px;
-				flex-shrink: 0;
-
-				@media screen and (max-width: 500px) {
-					width: 24px;
-				}
-
-				@media screen and (max-width: 400px) {
-					width: 22px;
-				}
-
-				transition:
-					fill 150ms ease,
-					stroke 150ms ease,
-					stroke-width 150ms ease;
-				fill: $text-color;
-
-				&:hover,
-				&:focus-visible {
-					:global(path) {
-						fill: none;
-						stroke: $text-color;
-						stroke-width: 30px;
-						stroke-linejoin: round;
-					}
-				}
-			}
-
-			button.filter {
-				&:hover,
-				&:focus-visible {
-					:global(path) {
-						stroke-width: 15px;
-					}
-				}
-			}
-
-			button.viewToggle,
-			button.exportBtn {
-				&:hover,
-				&:focus-visible {
-					:global(path) {
-						fill: $text-color;
-						stroke: none;
-					}
-					opacity: 0.6;
-				}
-			}
-
-			button.filter,
-			button.sort {
-				position: relative;
-
-				.indicator {
-					position: absolute;
-					top: 1px;
-					right: -6px;
-					width: 6px;
-					height: 6px;
-					background-color: $text-color;
-					border-radius: 50%;
-				}
-			}
-
-			button.discover {
-				transition:
-					fill 150ms ease,
-					stroke 150ms ease,
-					stroke-width 150ms ease,
-					transform 150ms ease;
-
-				&:hover,
-				&:focus-visible {
-					transform: rotate(60deg);
-				}
-			}
-
-			& > button:not(.face) {
-				margin-right: 12px;
-
-				@media screen and (max-width: 500px) {
-					margin-right: 6px;
-				}
-
-				@media screen and (max-width: 400px) {
-					margin-right: 3px;
-				}
-			}
-
-			button.following {
-				margin-right: 17px;
-
-				@media screen and (max-width: 500px) {
-					margin-right: 8px;
-				}
-
-				@media screen and (max-width: 400px) {
-					margin-right: 4px;
-				}
-			}
-
-			button.face {
-				font-family:
-					"Shrikhand",
-					system-ui,
-					-apple-system,
-					BlinkMacSystemFont;
-				font-size: 25px;
-				transform: rotate(90deg);
-				cursor: pointer;
-				margin-left: 3px;
-				transition:
-					-webkit-text-stroke 150ms ease,
-					color 150ms ease;
-
-				&:hover,
-				&:focus-visible {
-					color: $bg-color;
-					-webkit-text-stroke: 1.5px $text-color;
-				}
-			}
+		.indicator {
+			position: absolute;
+			top: 3px;
+			right: 3px;
+			width: 6px;
+			height: 6px;
+			background-color: $accent-color-hover;
+			border-radius: 50%;
 		}
 	}
 </style>

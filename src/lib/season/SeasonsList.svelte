@@ -392,9 +392,9 @@
 	}
 
 	@media screen and (min-width: 960px) {
-		:global(body.nav-shown) ul.seasons {
-			top: $nav-height;
-			height: calc(100vh - $nav-height);
+		ul.seasons {
+			top: 0;
+			height: 100vh;
 		}
 	}
 
@@ -403,8 +403,8 @@
 			flex-flow: column;
 		}
 
-		:global(body.nav-shown) ul.seasons {
-			top: $nav-height;
+		:global(body) ul.seasons {
+			top: 48px;
 		}
 
 		ul.seasons {

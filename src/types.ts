@@ -15,6 +15,11 @@ export type MediaType = ContentType | "person";
 export type Icon =
 	| "check"
 	| "clock"
+	| "home"
+	| "menu"
+	| "settings"
+	| "logout"
+	| "share"
 	| "calendar"
 	| "thumb-down"
 	| "thumb-up"
@@ -208,6 +213,8 @@ export interface Profile {
 	moviesWatched: number;
 	moviesWatchedRuntime: number;
 	showsWatchedRuntime: number;
+	moviesPlannedRuntime: number;
+	showsPlannedRuntime: number;
 }
 
 export interface UserSettings {

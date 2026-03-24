@@ -37,6 +37,13 @@
 	let jellyfinSyncModalOpen = $state(false);
 	let plexSyncModalOpen = $state(false);
 
+	// Time format cycling: 0=auto, 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years
+	const timeFormatLabels = ["auto", "minutes", "hours", "days", "weeks", "months", "years"];
+	let movieWatchedFormat = $state(0);
+	let showWatchedFormat = $state(0);
+	let moviePlannedFormat = $state(0);
+	let showPlannedFormat = $state(0);
+
 	async function getProfile() {
 		return (await axios.get(`/profile`)).data as Profile;
 	}
@@ -132,6 +139,30 @@
 		}
 		return ansString.slice(0, -2);
 	}
+
+	/**
+	 * Format minutes into a specific unit.
+	 * format: 0=auto, 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years
+	 */
+	function formatTime(m: number, format: number): string {
+		if (format === 0) return toFormattedTimeLong(m);
+		const formatters: [string, number][] = [
+			["minute", 1],
+			["hour", 60],
+			["day", 1440],
+			["week", 10080],
+			["month", 43200],
+			["year", 525600],
+		];
+		const [unit, divisor] = formatters[format - 1];
+		const val = Math.round((m / divisor) * 10) / 10;
+		if (val === 0 && m === 0) return `0 ${unit}s`;
+		return `${val.toLocaleString()} ${unit}${val !== 1 ? "s" : ""}`;
+	}
+
+	function cycleFormat(current: number): number {
+		return (current + 1) % timeFormatLabels.length;
+	}
 </script>
 
 <svelte:head>
@@ -167,13 +198,28 @@
 				<Stat name="Shows Watched" value={profile.showsWatched} large />
 				<Stat
 					name="Watching Movies"
-					value={toFormattedTimeLong(profile.moviesWatchedRuntime)}
+					value={formatTime(profile.moviesWatchedRuntime, movieWatchedFormat)}
+					onclick={() => movieWatchedFormat = cycleFormat(movieWatchedFormat)}
 				/>
 				<Stat
 					name="Watching Shows"
-					value={toFormattedTimeLong(profile.showsWatchedRuntime)}
+					value={formatTime(profile.showsWatchedRuntime, showWatchedFormat)}
 					disc="This is very inaccurate 🚀"
+					onclick={() => showWatchedFormat = cycleFormat(showWatchedFormat)}
 				/>
+				{#if profile.moviesPlannedRuntime > 0 || profile.showsPlannedRuntime > 0}
+					<Stat
+						name="Planned Movies"
+						value={formatTime(profile.moviesPlannedRuntime, moviePlannedFormat)}
+						onclick={() => moviePlannedFormat = cycleFormat(moviePlannedFormat)}
+					/>
+					<Stat
+						name="Planned Shows"
+						value={formatTime(profile.showsPlannedRuntime, showPlannedFormat)}
+						disc="This is very inaccurate 🚀"
+						onclick={() => showPlannedFormat = cycleFormat(showPlannedFormat)}
+					/>
+				{/if}
 			{:catch err}
 				<Error error={err} pretty="Failed to get stats!" />
 			{/await}

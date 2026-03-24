@@ -1,6 +1,6 @@
 export interface ToolTipOptions {
 	text: string;
-	pos?: "left" | "top" | "bot";
+	pos?: "left" | "right" | "top" | "bot";
 
 	/**
 	 * Only show tooltip if this condition is true.
@@ -23,6 +23,9 @@ export default function tooltip(node: HTMLElement, opts: ToolTipOptions) {
 			if (pos === "left") {
 				tooltip.style.left = `${nrect.x - trect.width - 10}px`;
 				tooltip.style.top = `${nrect.y + trect.height / 2 - 19.5}px`;
+			} else if (pos === "right") {
+				tooltip.style.left = `${nrect.x + nrect.width + 10}px`;
+				tooltip.style.top = `${nrect.y + nrect.height / 2 - trect.height / 2}px`;
 			} else if (pos === "top") {
 				tooltip.style.left = `${nrect.x - trect.width / 2 + nrect.width / 2}px`;
 				tooltip.style.top = `${nrect.y - trect.height - 5}px`;

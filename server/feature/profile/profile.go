@@ -16,6 +16,8 @@ type Profile struct {
 	MoviesWatched        int32     `json:"moviesWatched"`
 	MoviesWatchedRuntime uint32    `json:"moviesWatchedRuntime"`
 	ShowsWatchedRuntime  uint32    `json:"showsWatchedRuntime"`
+	MoviesPlannedRuntime uint32    `json:"moviesPlannedRuntime"`
+	ShowsPlannedRuntime  uint32    `json:"showsPlannedRuntime"`
 }
 
 type Service struct {
@@ -92,8 +94,30 @@ func (s *Service) getProfile(userId uint) (Profile, error) {
 		moviesWatched        int32
 		moviesWatchedRuntime uint32
 		showsWatchedRuntime  uint32
+		moviesPlannedRuntime uint32
+		showsPlannedRuntime  uint32
 	)
 	for _, w := range *watched {
+		// Calculate planned runtime
+		if w.Status == entity.PLANNED {
+			if w.Content == nil {
+				continue
+			}
+			c := *w.Content
+			if c.Type == entity.SHOW {
+				if c.NumberOfEpisodes != 0 {
+					var showRuntime uint32 = 30
+					if c.Runtime != 0 {
+						showRuntime = c.Runtime
+					}
+					showsPlannedRuntime += showRuntime * c.NumberOfEpisodes
+				}
+			} else if c.Type == entity.MOVIE {
+				moviesPlannedRuntime += c.Runtime
+			}
+			continue
+		}
+
 		isFinished := false
 		if w.Status == entity.FINISHED {
 			isFinished = true
@@ -130,6 +154,8 @@ func (s *Service) getProfile(userId uint) (Profile, error) {
 		MoviesWatched:        moviesWatched,
 		MoviesWatchedRuntime: moviesWatchedRuntime,
 		ShowsWatchedRuntime:  showsWatchedRuntime,
+		MoviesPlannedRuntime: moviesPlannedRuntime,
+		ShowsPlannedRuntime:  showsPlannedRuntime,
 	}
 	return profile, nil
 }

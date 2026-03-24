@@ -21,7 +21,7 @@ import (
 // Adjust these to change how recommendations are computed and served.
 const (
 	// Max number of watched items used as recommendation sources (highest rated first).
-	recMaxSources = 100
+	recMaxSources = 500
 	// Default weight for unrated items (rating 0). Scale is 0–10.
 	recDefaultWeight = 2.5
 	// Number of TMDB recommendation pages fetched per source item (~20 results/page).

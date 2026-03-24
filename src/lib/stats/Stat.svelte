@@ -7,6 +7,7 @@
 		large?: boolean;
 		href?: string | undefined;
 		disc?: string | undefined;
+		onclick?: (() => void) | undefined;
 	}
 
 	let {
@@ -15,10 +16,11 @@
 		large = false,
 		href = undefined,
 		disc = undefined,
+		onclick = undefined,
 	}: Props = $props();
 </script>
 
-<a {href}>
+<a {href} class:clickable={!!onclick} onclick={onclick} role={onclick ? "button" : undefined} tabindex={onclick ? 0 : undefined}>
 	{#if disc}
 		<div class="disclaimer" use:tooltip={{ text: disc, pos: "top" }}>*</div>
 	{/if}
@@ -53,6 +55,20 @@
 			right: 8px;
 			font-weight: bold;
 			font-size: 20px;
+		}
+
+		&.clickable {
+			cursor: pointer;
+			user-select: none;
+			transition: background-color 0.15s ease;
+
+			&:hover {
+				background-color: rgba(128, 128, 128, 0.2);
+			}
+
+			&:active {
+				background-color: rgba(128, 128, 128, 0.3);
+			}
 		}
 	}
 </style>
