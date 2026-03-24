@@ -19,6 +19,10 @@ func NewRouter(br *router.BaseRouter, service *Service) *Router {
 }
 
 func (r *Router) AddRoutes() {
+	// Public route (no auth required)
+	tlPublic := r.br.Router.Group("/tierlist")
+	tlPublic.GET("/:id/:username", r.GetPublicTierlist)
+
 	tl := r.br.Router.Group("/tierlist").Use(authmiddleware.AuthRequired(nil, r.br.Cfg))
 	tl.GET("", r.GetTierlist)
 	tl.POST("/tier", r.CreateTier)
@@ -185,4 +189,23 @@ func (r *Router) DeletePreset(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (r *Router) GetPublicTierlist(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid user id"})
+		return
+	}
+	username := c.Param("username")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "username required"})
+		return
+	}
+	tiers, err := r.s.GetPublicTiers(uint(userID), username)
+	if err != nil {
+		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, tiers)
 }

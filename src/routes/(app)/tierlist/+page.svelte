@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import axios from "axios";
+	import { toPng } from "html-to-image";
 	import type {
 		Tier,
 		TierItem,
 		CreateTierRequest,
 		Watched,
 		TierPreset,
+		WatchedStatus,
 	} from "@/types";
 	import { baseURL } from "@/lib/util/api";
 	import { notify } from "@/lib/util/notify";
+	import { store } from "@/store.svelte";
+	import { parseTokenPayload } from "@/lib/util/helpers";
 	import Icon from "@/lib/Icon.svelte";
 	import Spinner from "@/lib/Spinner.svelte";
 	import Modal from "@/lib/Modal.svelte";
@@ -31,6 +35,147 @@
 	let savePresetName = $state("");
 	let savePresetDesc = $state("");
 	let tierlistContainer: HTMLDivElement | undefined = $state(undefined);
+	let exporting = $state(false);
+
+	// Overlay state
+	let overlayExpanded = $state(true);
+
+	// Status filters for untiered items
+	let activeStatusFilters: WatchedStatus[] = $state([]);
+
+	const statusLabels: { value: WatchedStatus; label: string }[] = [
+		{ value: "PLANNED", label: "Planned" },
+		{ value: "WATCHING", label: "Watching" },
+		{ value: "FINISHED", label: "Finished" },
+		{ value: "HOLD", label: "On Hold" },
+		{ value: "DROPPED", label: "Dropped" },
+	];
+
+	let filteredUntiered = $derived(
+		activeStatusFilters.length === 0
+			? untieredWatched
+			: untieredWatched.filter((w: any) => activeStatusFilters.includes(w.status)),
+	);
+
+	async function exportTierlist() {
+		if (!tierlistContainer || exporting) return;
+		exporting = true;
+		try {
+			const username = store.userInfo?.username || "User";
+			const tokenData = parseTokenPayload();
+			const now = new Date();
+			const dateStr = now.toLocaleDateString("en-US", {
+				year: "numeric",
+				month: "long",
+				day: "numeric",
+			});
+
+			// Build share link
+			let shareLink = "";
+			if (tokenData) {
+				shareLink = `${window.location.origin}/lists/${tokenData.userId}/${username}`;
+			}
+
+			// Create a wrapper with title for export
+			const wrapper = document.createElement("div");
+			wrapper.style.cssText = `
+				background: #1a1a1a;
+				padding: 32px;
+				display: inline-block;
+			`;
+
+			// Header with title and date
+			const header = document.createElement("div");
+			header.style.cssText = `
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				margin-bottom: 20px;
+			`;
+
+			const title = document.createElement("div");
+			title.style.cssText = `
+				color: #ffffff;
+				font-family: system-ui, -apple-system, sans-serif;
+				font-size: 28px;
+				font-weight: 700;
+				letter-spacing: -0.3px;
+			`;
+			title.textContent = `Tierlist from ${username}`;
+
+			const date = document.createElement("div");
+			date.style.cssText = `
+				color: rgba(255, 255, 255, 0.5);
+				font-family: system-ui, -apple-system, sans-serif;
+				font-size: 14px;
+			`;
+			date.textContent = dateStr;
+
+			header.appendChild(title);
+			header.appendChild(date);
+
+			const clone = tierlistContainer.cloneNode(true) as HTMLElement;
+			// Remove edit-only elements from clone
+			clone.querySelectorAll(".tier-move-actions, .tier-label-actions").forEach((el) => el.remove());
+
+			// Copy computed styles for tier labels
+			const origLabels = tierlistContainer.querySelectorAll(".tier-label");
+			const cloneLabels = clone.querySelectorAll(".tier-label");
+			origLabels.forEach((orig, i) => {
+				const cl = cloneLabels[i] as HTMLElement;
+				if (cl) {
+					const cs = getComputedStyle(orig);
+					cl.style.minWidth = cs.minWidth;
+				}
+			});
+
+			wrapper.appendChild(header);
+			wrapper.appendChild(clone);
+
+			// Footer with share link
+			if (shareLink) {
+				const footer = document.createElement("div");
+				footer.style.cssText = `
+					color: rgba(255, 255, 255, 0.4);
+					font-family: system-ui, -apple-system, sans-serif;
+					font-size: 13px;
+					margin-top: 16px;
+					text-align: right;
+				`;
+				footer.textContent = shareLink;
+				wrapper.appendChild(footer);
+			}
+
+			document.body.appendChild(wrapper);
+
+			const dataUrl = await toPng(wrapper, {
+				pixelRatio: 3,
+				cacheBust: true,
+			});
+
+			document.body.removeChild(wrapper);
+
+			const link = document.createElement("a");
+			link.download = `tierlist-${username}.png`;
+			link.href = dataUrl;
+			link.click();
+
+			notify({ text: "Tierlist exported!", type: "success" });
+		} catch (err) {
+			console.error("Failed to export tierlist:", err);
+			notify({ text: "Failed to export tierlist", type: "error" });
+		} finally {
+			exporting = false;
+		}
+	}
+
+	function toggleStatusFilter(status: WatchedStatus) {
+		if (activeStatusFilters.includes(status)) {
+			activeStatusFilters = activeStatusFilters.filter((s) => s !== status);
+		} else {
+			activeStatusFilters = [...activeStatusFilters, status];
+		}
+	}
 
 	// Preset definitions
 	const presets = [
@@ -581,6 +726,9 @@
 					Add Tier
 				</button>
 			{/if}
+			<button class="btn-add" onclick={exportTierlist} disabled={exporting || loading}>
+				{#if exporting}Exporting...{:else}Export PNG{/if}
+			</button>
 			<button
 				class="btn-edit"
 				class:active={editMode}
@@ -706,45 +854,74 @@
 		</div>
 
 		{#if editMode}
-			<div class="untiered-section">
-				<h3>Untiered</h3>
+			<div class="untiered-section" class:collapsed={!overlayExpanded} class:dragging={dragItem !== null}>
+				<div class="untiered-header" onclick={() => (overlayExpanded = !overlayExpanded)}>
+					<h3>Untiered ({untieredWatched.length})</h3>
+					<div class="untiered-filters" onclick={(e) => e.stopPropagation()}>
+						{#each statusLabels as sl}
+							<button
+								class="filter-chip"
+								class:active={activeStatusFilters.includes(sl.value)}
+								onclick={() => toggleStatusFilter(sl.value)}
+							>
+								{sl.label}
+							</button>
+						{/each}
+					</div>
+					<button class="overlay-toggle" title={overlayExpanded ? "Collapse" : "Expand"}>
+						<Icon i="chevron" wh={14} facing={overlayExpanded ? "down" : "up"} />
+					</button>
+				</div>
+				{#if overlayExpanded}
+					<div
+						class="untiered-items"
+						class:drag-over={dragOverTierId === null && dragItem !== null}
+						ondragover={(e) => {
+							e.preventDefault();
+							dragOverTierId = null;
+						}}
+						ondrop={onDropToUntiered}
+					>
+						{#if filteredUntiered.length > 0}
+							{#each filteredUntiered as w, idx (getWatchedId(w))}
+								{@const poster = getItemPoster(w)}
+								{@const title = getItemTitle(w)}
+								<div
+									class="tier-item"
+									class:dragging={dragItem?.watchedId === getWatchedId(w)}
+									draggable="true"
+									ondragstart={(e) =>
+										onDragStart(e, getWatchedId(w), null, idx)}
+									ondragend={onDragEnd}
+									title={title}
+								>
+									<div class="tier-item-poster">
+										{#if poster}
+											<img src={poster} alt={title} loading="lazy" />
+										{:else}
+											<div class="no-poster">{title}</div>
+										{/if}
+									</div>
+									<span class="tier-item-title">{title}</span>
+								</div>
+							{/each}
+						{:else if untieredWatched.length > 0}
+							<div class="untiered-empty">No items match the selected filters</div>
+						{:else}
+							<div class="untiered-empty">All items are in tiers!</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			{#if dragItem && !overlayExpanded}
 				<div
-					class="untiered-items"
-					class:drag-over={dragOverTierId === null && dragItem !== null}
+					class="overlay-hotzone"
 					ondragover={(e) => {
 						e.preventDefault();
-						dragOverTierId = null;
+						overlayExpanded = true;
 					}}
-					ondrop={onDropToUntiered}
-				>
-					{#if untieredWatched.length > 0}
-						{#each untieredWatched as w, idx (getWatchedId(w))}
-							{@const poster = getItemPoster(w)}
-							{@const title = getItemTitle(w)}
-							<div
-								class="tier-item"
-								class:dragging={dragItem?.watchedId === getWatchedId(w)}
-								draggable="true"
-								ondragstart={(e) =>
-									onDragStart(e, getWatchedId(w), null, idx)}
-								ondragend={onDragEnd}
-								title={title}
-							>
-								<div class="tier-item-poster">
-									{#if poster}
-										<img src={poster} alt={title} loading="lazy" />
-									{:else}
-										<div class="no-poster">{title}</div>
-									{/if}
-								</div>
-								<span class="tier-item-title">{title}</span>
-							</div>
-						{/each}
-					{:else}
-						<div class="untiered-empty">All items are in tiers!</div>
-					{/if}
-				</div>
-			</div>
+				></div>
+			{/if}
 		{/if}
 	{/if}
 </div>
@@ -900,6 +1077,7 @@
 <style lang="scss">
 	.tierlist-page {
 		padding: 24px;
+		padding-bottom: 280px;
 		max-width: 1400px;
 		margin: 0 auto;
 	}
@@ -1208,30 +1386,128 @@
 	}
 
 	.untiered-section {
-		margin-top: 32px;
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 50;
+		background: $bg-color;
+		border-top: 1px solid rgba(128, 128, 128, 0.2);
+		box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
+		transition: opacity 200ms ease, transform 200ms ease;
+
+		&.collapsed {
+			.untiered-items {
+				display: none;
+			}
+		}
+
+		&.dragging:not(.collapsed) {
+			opacity: 0.3;
+		}
 
 		h3 {
-			margin-bottom: 12px;
+			margin: 0;
 			font-weight: 600;
-			font-size: 16px;
+			font-size: 14px;
 			opacity: 0.8;
+			white-space: nowrap;
 		}
+	}
+
+	.untiered-header {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 20px;
+		cursor: pointer;
+		user-select: none;
+
+		&:hover {
+			background: rgba(128, 128, 128, 0.05);
+		}
+	}
+
+	.untiered-filters {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+		flex: 1;
+	}
+
+	.filter-chip {
+		padding: 3px 10px;
+		border-radius: 12px;
+		border: 1px solid rgba(128, 128, 128, 0.25);
+		background: rgba(128, 128, 128, 0.06);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 11px;
+		font-weight: 500;
+		white-space: nowrap;
+		transition: all 150ms ease;
+		opacity: 0.7;
+
+		&:hover {
+			opacity: 1;
+			background: rgba(128, 128, 128, 0.12);
+		}
+
+		&.active {
+			background: $accent-color-hover;
+			color: $bg-color;
+			border-color: $accent-color-hover;
+			opacity: 1;
+		}
+	}
+
+	.overlay-toggle {
+		background: none;
+		border: none;
+		color: $text-color;
+		cursor: pointer;
+		padding: 4px 8px;
+		opacity: 0.6;
+		transition: opacity 150ms ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 32px;
+		height: 32px;
+		border-radius: 6px;
+		margin-left: auto;
+
+		&:hover {
+			opacity: 1;
+			background: rgba(128, 128, 128, 0.1);
+		}
+	}
+
+	.overlay-hotzone {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 48px;
+		z-index: 49;
 	}
 
 	.untiered-items {
 		display: flex;
 		flex-flow: row wrap;
 		gap: 6px;
-		padding: 16px;
-		min-height: 110px;
-		border-radius: 12px;
-		border: 2px dashed rgba(128, 128, 128, 0.25);
-		background: rgba(128, 128, 128, 0.03);
+		padding: 12px 20px 16px;
+		min-height: 80px;
+		max-height: 220px;
+		overflow-y: auto;
+		border-top: 1px solid rgba(128, 128, 128, 0.1);
 		transition: all 200ms ease;
 
 		&.drag-over {
 			background-color: rgba(128, 128, 128, 0.08);
-			border-color: $accent-color-hover;
+			border-top-color: $accent-color-hover;
 		}
 	}
 
@@ -1240,6 +1516,7 @@
 		align-items: center;
 		justify-content: center;
 		width: 100%;
+		padding: 16px;
 		color: $placeholder-color;
 		font-style: italic;
 		font-size: 13px;

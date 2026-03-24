@@ -1,6 +1,7 @@
 package tierlist
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/sbondCo/Watcharr/database/entity"
@@ -29,6 +30,19 @@ func (s *Service) GetTiers(userID uint) ([]entity.Tier, error) {
 		Preload("TierItems.Watched.Game.Poster").
 		Find(&tiers).Error
 	return tiers, err
+}
+
+// GetPublicTiers returns a public user's tierlist (checks privacy).
+func (s *Service) GetPublicTiers(userID uint, username string) ([]entity.Tier, error) {
+	user := new(entity.User)
+	res := s.db.Where("id = ? AND username = ?", userID, username).Take(&user)
+	if res.Error != nil {
+		return nil, errors.New("failed to find user")
+	}
+	if user.Private != nil && *user.Private {
+		return nil, errors.New("this user's list is private")
+	}
+	return s.GetTiers(userID)
 }
 
 // CreateTier creates a new tier for a user.

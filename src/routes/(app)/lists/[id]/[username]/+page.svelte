@@ -5,7 +5,7 @@
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
-	import type { Media, MediaTypeE, PublicUser, Watched } from "@/types.js";
+	import type { Media, MediaTypeE, PublicUser, Watched, Tier } from "@/types.js";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { publicAxios } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
@@ -19,6 +19,7 @@
 	import ListView from "@/lib/poster/ListView.svelte";
 	import Error from "@/lib/Error.svelte";
 	import { afterNavigate } from "$app/navigation";
+	import { baseURL } from "@/lib/util/api.js";
 
 	let meta = $derived.by(() => {
 		return {
@@ -30,6 +31,11 @@
 	let isLoggedIn = $derived(!!localStorage.getItem("token"));
 	let followBtnDisabled = $state(false);
 	let user: PublicUser | undefined = $state();
+	let activeTab: "list" | "tierlist" = $state("list");
+	let publicTiers: Tier[] = $state([]);
+	let tiersLoading = $state(false);
+	let tiersError = $state(false);
+	let tierlistContainer: HTMLDivElement | undefined = $state(undefined);
 
 	// Map of own watched data keyed by "tmdbId-type" or "igdbId-game"
 	let myWatchedMap: Map<string, Watched> = $state(new Map());
@@ -65,6 +71,56 @@
 			console.error("loadMyWatchedData: Failed!", err);
 		}
 	}
+
+	async function loadPublicTierlist() {
+		if (!meta.id || !meta.username) return;
+		tiersLoading = true;
+		tiersError = false;
+		try {
+			const resp = await publicAxios.get(`/tierlist/${meta.id}/${meta.username}`);
+			publicTiers = resp.data || [];
+		} catch {
+			publicTiers = [];
+			tiersError = true;
+		}
+		tiersLoading = false;
+	}
+
+	function getTierItemPoster(item: any): string | undefined {
+		const w = item.watched || item;
+		if (w.content?.poster_path) return `${baseURL}/img${w.content.poster_path}`;
+		if (w.game?.poster?.path) return `${baseURL}/${w.game.poster.path}`;
+		if (w.game?.coverId) return `https://images.igdb.com/igdb/image/upload/t_cover_big/${w.game.coverId}.jpg`;
+		return undefined;
+	}
+
+	function getTierItemTitle(item: any): string {
+		const w = item.watched || item;
+		if (w.content?.title) return w.content.title;
+		if (w.game?.name) return w.game.name;
+		return "Unknown";
+	}
+
+	function getTierItemLink(item: any): string | undefined {
+		const w = item.watched || item;
+		if (w.content) return `/${w.content.type}/${w.content.tmdbId}`;
+		if (w.game) return `/game/${w.game.igdbId}`;
+		return undefined;
+	}
+
+	// Equalize tier label widths
+	$effect(() => {
+		void publicTiers;
+		if (!tierlistContainer) return;
+		const labels = tierlistContainer.querySelectorAll<HTMLElement>(".tier-label");
+		if (labels.length === 0) return;
+		labels.forEach((l) => (l.style.minWidth = ""));
+		requestAnimationFrame(() => {
+			let maxW = 80;
+			labels.forEach((l) => { if (l.offsetWidth > maxW) maxW = l.offsetWidth; });
+			labels.forEach((l) => (l.style.minWidth = `${maxW}px`));
+		});
+	});
 
 	let isFollowing = $derived(
 		!!store.follows?.find((f) => f.followedUser.id === Number(meta.id)),
@@ -143,6 +199,7 @@
 					console.error("getPublicUser failed!", err);
 				});
 			loadMyWatchedData();
+			loadPublicTierlist();
 		}
 	});
 
@@ -200,6 +257,73 @@
 		</div>
 	</div>
 </div>
+
+{#if publicTiers.length > 0 || !tiersError}
+	<div class="view-tabs">
+		<button
+			class="view-tab"
+			class:active={activeTab === "list"}
+			onclick={() => (activeTab = "list")}
+		>
+			<Icon i="view-list" wh={16} />
+			Watched List
+		</button>
+		<button
+			class="view-tab"
+			class:active={activeTab === "tierlist"}
+			onclick={() => (activeTab = "tierlist")}
+		>
+			<Icon i="star" wh={16} />
+			Tierlist
+		</button>
+	</div>
+{/if}
+
+{#if activeTab === "tierlist"}
+	{#if tiersLoading}
+		<Spinner />
+	{:else if publicTiers.length > 0}
+		<div class="public-tierlist" bind:this={tierlistContainer}>
+			{#each publicTiers as tier (tier.id)}
+				<div class="tier-row">
+					<div
+						class="tier-label"
+						style="background-color: {tier.color}; color: {tier.textColor};"
+					>
+						<span class="tier-name">{tier.name}</span>
+					</div>
+					<div class="tier-items">
+						{#if tier.tierItems && tier.tierItems.length > 0}
+							{#each tier.tierItems as item}
+								{@const poster = getTierItemPoster(item)}
+								{@const title = getTierItemTitle(item)}
+								{@const link = getTierItemLink(item)}
+								<a href={link} class="tier-item" title={title}>
+									<div class="tier-item-poster">
+										{#if poster}
+											<img src={poster} alt={title} loading="lazy" />
+										{:else}
+											<div class="no-poster">{title}</div>
+										{/if}
+									</div>
+									<span class="tier-item-title">{title}</span>
+								</a>
+							{/each}
+						{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
+	{:else}
+		<div class="empty-list-wrap">
+			<div class="empty-list">
+				<Icon i="star" wh={80} />
+				<h2 class="norm">No tierlist yet!</h2>
+				<h4 class="norm">This user hasn't set up a tierlist.</h4>
+			</div>
+		</div>
+	{/if}
+{:else}
 
 {#if store.viewMode === "list"}
 	{#if dataLoader.state.data?.length > 0}
@@ -262,6 +386,8 @@
 			}}
 		/>
 	</div>
+{/if}
+
 {/if}
 
 <style lang="scss">
@@ -352,5 +478,155 @@
 	.empty-list-wrap {
 		display: flex;
 		justify-content: center;
+	}
+
+	.view-tabs {
+		display: flex;
+		justify-content: center;
+		gap: 4px;
+		margin: 0 20px 16px;
+	}
+
+	.view-tab {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 18px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(128, 128, 128, 0.2);
+		background: rgba(128, 128, 128, 0.05);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 500;
+		transition: all 180ms ease;
+		opacity: 0.6;
+
+		&:hover {
+			opacity: 0.85;
+			background: rgba(128, 128, 128, 0.1);
+		}
+
+		&.active {
+			opacity: 1;
+			border-color: $accent-color;
+			background: rgba($accent-color, 0.1);
+		}
+	}
+
+	.public-tierlist {
+		max-width: 1400px;
+		margin: 0 auto;
+		padding: 0 24px 24px;
+	}
+
+	.tier-row {
+		display: flex;
+		border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+
+		&:first-child {
+			border-radius: 12px 12px 0 0;
+			overflow: hidden;
+		}
+
+		&:last-child {
+			border-bottom: none;
+			border-radius: 0 0 12px 12px;
+			overflow: hidden;
+		}
+	}
+
+	.tier-label {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 80px;
+		width: auto;
+		padding: 10px 12px;
+		font-weight: 800;
+		font-size: 24px;
+		text-align: center;
+		user-select: none;
+		letter-spacing: -0.5px;
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+
+		@media screen and (max-width: 600px) {
+			min-width: 50px;
+			font-size: 18px;
+			padding: 5px 6px;
+		}
+	}
+
+	.tier-name {
+		line-height: 1;
+	}
+
+	.tier-items {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 6px;
+		flex: 1;
+		align-items: flex-start;
+		align-content: flex-start;
+		min-height: 80px;
+		background: rgba(128, 128, 128, 0.03);
+	}
+
+	.tier-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 62px;
+		text-decoration: none;
+		color: $text-color;
+		transition: transform 120ms ease;
+
+		&:hover {
+			transform: translateY(-2px);
+		}
+	}
+
+	.tier-item-poster {
+		width: 62px;
+		height: 93px;
+		border-radius: 6px;
+		overflow: hidden;
+		background: rgba(128, 128, 128, 0.1);
+
+		img {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+		}
+
+		@media screen and (max-width: 600px) {
+			width: 50px;
+			height: 75px;
+		}
+	}
+
+	.no-poster {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 9px;
+		text-align: center;
+		padding: 4px;
+		word-break: break-word;
+		opacity: 0.5;
+	}
+
+	.tier-item-title {
+		font-size: 9px;
+		margin-top: 2px;
+		text-align: center;
+		width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		opacity: 0.7;
 	}
 </style>
