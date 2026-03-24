@@ -11,6 +11,7 @@
 	import FollowingMenu from "@/lib/nav/FollowingMenu.svelte";
 	import SortMenu from "@/lib/nav/SortMenu.svelte";
 	import TagMenu from "@/lib/tag/TagMenu.svelte";
+	import TextImportModal from "@/lib/TextImportModal.svelte";
 	import { isTouch } from "@/lib/util/helpers";
 	import { store, defaultSort } from "@/store.svelte";
 	import { RatingSystem } from "@/types";
@@ -31,6 +32,7 @@
 	let followingMenuShown = $state(false);
 	let detailedMenuShown = $state(false);
 	let tagMenuShown = $state(false);
+	let textImportShown = $state(false);
 	let scroll = window.scrollY;
 
 	function handleProfileClick() {
@@ -390,6 +392,13 @@
 					/>
 				{/if}
 				<button
+					class="plain other textImport"
+					onclick={() => (textImportShown = !textImportShown)}
+					use:tooltip={{ text: "Import List", pos: "bot" }}
+				>
+					<Icon i="document" wh={22} />
+				</button>
+				<button
 					class="plain other discover"
 					onclick={() => goto("/discover")}
 					use:tooltip={{ text: "Discover", pos: "bot" }}
@@ -430,6 +439,10 @@
 		/>
 	{/if}
 </nav>
+
+{#if textImportShown}
+	<TextImportModal onClose={() => (textImportShown = false)} />
+{/if}
 
 {#await getInitialData()}
 	<Spinner />

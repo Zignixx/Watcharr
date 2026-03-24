@@ -912,6 +912,14 @@
 		saving = true;
 		const nid = notify({ text: "Saving tierlist...", type: "loading" });
 		try {
+			// Save tier colors/names
+			for (const tier of tiers) {
+				await axios.put(`/tierlist/tier/${tier.id}`, {
+					name: tier.name,
+					color: tier.color,
+					textColor: tier.textColor,
+				});
+			}
 			// Build items map
 			const items: Record<number, number[]> = {};
 			for (const tier of tiers) {
