@@ -10,6 +10,7 @@
 	import infScroll from "@/lib/util/infScroll";
 	import paginatedLoader from "@/lib/util/paginatedLoader.svelte";
 	import { clearActiveFilters, store } from "@/store.svelte";
+	import { RatingSystem } from "@/types";
 	import type { Media } from "@/types";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { onDestroy, onMount, untrack } from "svelte";
@@ -70,6 +71,14 @@
 	}
 
 	onMount(() => {
+		// If user prefers tierlist as default view, redirect there
+		if (
+			store.userSettings?.defaultView === 1 &&
+			store.userSettings?.ratingSystem === RatingSystem.Tierlist
+		) {
+			goto("/tierlist", { replaceState: true });
+			return;
+		}
 		window.addEventListener("watcharr-export", handleExportEvent);
 	});
 

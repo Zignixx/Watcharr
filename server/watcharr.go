@@ -43,6 +43,7 @@ import (
 	"github.com/sbondCo/Watcharr/feature/setup"
 	"github.com/sbondCo/Watcharr/feature/tag"
 	"github.com/sbondCo/Watcharr/feature/task"
+	"github.com/sbondCo/Watcharr/feature/tierlist"
 	"github.com/sbondCo/Watcharr/feature/user"
 	"github.com/sbondCo/Watcharr/feature/watched"
 	"github.com/sbondCo/Watcharr/feature/watched/episode"
@@ -223,6 +224,7 @@ func main() {
 	profileService := profile.NewService(db)
 	followService := follow.NewService(db)
 	tagService := tag.NewService(db, watchedService)
+	tierlistService := tierlist.NewService(db)
 	searchService := search.NewService(db, br.Cfg, contentService, watchedService)
 	discoverService := discover.NewService(db, br.Cfg, contentService, followService)
 	importService := imprt.NewService(
@@ -254,6 +256,7 @@ func main() {
 	job.NewRouter(br).AddRoutes()
 	task.NewRouter(br).AddRoutes()
 	tag.NewRouter(br, tagService).AddRoutes()
+	tierlist.NewRouter(br, tierlistService).AddRoutes()
 	game.NewRouter(br, gameService, watchedService).AddRoutes()
 	search.NewRouter(br, searchService, watchedService).AddRoutes()
 	discover.NewRouter(br, discoverService, watchedService).AddRoutes()

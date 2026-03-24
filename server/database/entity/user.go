@@ -59,10 +59,12 @@ type UserSettings struct {
 	// Does the user want show, season and episode automations enabled.
 	AutomateShowStatuses *bool `gorm:"default:true" json:"automateShowStatuses"`
 	// Rating system user wants to use (frontend only).
-	// RatingSystem enum in frontend maxes out at 3, so just max=3 on this and we should be gut.
-	RatingSystem *int `json:"ratingSystem" binding:"omitempty,max=3"`
+	// RatingSystem enum in frontend maxes out at 4, so just max=4 on this and we should be gut.
+	RatingSystem *int `json:"ratingSystem" binding:"omitempty,max=4"`
 	// Rating step for supported rating systems (frontend only, enum goes up to 2).
 	RatingStep *int `json:"ratingStep" binding:"omitempty,max=2"`
+	// Default view: 0 = watched list (default), 1 = tierlist
+	DefaultView *int `gorm:"default:0" json:"defaultView" binding:"omitempty,max=1"`
 }
 
 // Public user details for search results

@@ -13,6 +13,7 @@
 	import TagMenu from "@/lib/tag/TagMenu.svelte";
 	import { isTouch } from "@/lib/util/helpers";
 	import { store, defaultSort } from "@/store.svelte";
+	import { RatingSystem } from "@/types";
 	import axios from "axios";
 	import { onMount } from "svelte";
 	interface Props {
@@ -350,6 +351,25 @@
 				{/if}
 			{/if}
 			{#if isLoggedIn}
+				{#if store.userSettings?.ratingSystem === RatingSystem.Tierlist}
+					{#if page.url?.pathname === "/tierlist"}
+						<button
+							class="plain other tierlist"
+							onclick={() => goto("/")}
+							use:tooltip={{ text: "Watched List", pos: "bot" }}
+						>
+							<Icon i="view-list" wh={24} />
+						</button>
+					{:else}
+						<button
+							class="plain other tierlist"
+							onclick={() => goto("/tierlist")}
+							use:tooltip={{ text: "Tierlist", pos: "bot" }}
+						>
+							<Icon i="star" wh={24} />
+						</button>
+					{/if}
+				{/if}
 				<button
 					class="plain other tag"
 					onclick={() => {

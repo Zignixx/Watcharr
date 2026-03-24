@@ -224,6 +224,8 @@ export interface UserSettings {
 	 * Supported: 1, 0.5, 0.1 (must validate).
 	 */
 	ratingStep?: RatingStep;
+	/** Default view: 0 = watched list, 1 = tierlist */
+	defaultView?: number;
 }
 
 export enum RatingSystem {
@@ -231,12 +233,59 @@ export enum RatingSystem {
 	OutOf100,
 	OutOf5,
 	Thumbs,
+	Tierlist,
 }
 
 export enum RatingStep {
 	One, // default
 	Point5,
 	Point1,
+}
+
+export interface Tier {
+	id: number;
+	createdAt: string;
+	updatedAt: string;
+	name: string;
+	color: string;
+	textColor: string;
+	position: number;
+	tierItems?: TierItem[];
+}
+
+export interface TierItem {
+	id: number;
+	tierId: number;
+	watchedId: number;
+	watched?: Watched;
+	position: number;
+}
+
+export interface CreateTierRequest {
+	name: string;
+	color: string;
+	textColor: string;
+}
+
+export interface UpdateTierItemsRequest {
+	items: Record<number, number[]>;
+}
+
+export interface TierPreset {
+	id: number;
+	userId: number;
+	name: string;
+	description: string;
+	tiers: TierPresetEntry[];
+}
+
+export interface TierPresetEntry {
+	id: number;
+	presetId: number;
+	name: string;
+	color: string;
+	textColor: string;
+	position: number;
 }
 
 export interface ChangePasswordForm {

@@ -72,6 +72,17 @@
 		>
 			Thumbs
 		</button>
+		<button
+			class={[
+				"plain",
+				store.userSettings?.ratingSystem === RatingSystem.Tierlist
+					? "active"
+					: "",
+			].join(" ")}
+			onclick={() => update(RatingSystem.Tierlist)}
+		>
+			Tierlist
+		</button>
 	</div>
 </Setting>
 

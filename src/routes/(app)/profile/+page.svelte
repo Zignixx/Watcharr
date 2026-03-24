@@ -9,7 +9,7 @@
 	import { updateUserSetting } from "@/lib/util/api";
 	import { getOrdinalSuffix, monthsShort } from "@/lib/util/helpers";
 	import { store } from "@/store.svelte";
-	import { UserType, type Image, type Profile } from "@/types";
+	import { UserType, RatingSystem, type Image, type Profile } from "@/types";
 	import axios from "axios";
 	import { notify } from "@/lib/util/notify";
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
@@ -31,6 +31,7 @@
 	let countryDisabled = $state(false);
 	let includePreviouslyWatchedDisabled = $state(false);
 	let automateShowStatusesDisabled = $state(false);
+	let defaultViewDisabled = $state(false);
 	let pwChangeModalOpen = $state(false);
 	let getProfilePromise = $state(getProfile());
 	let jellyfinSyncModalOpen = $state(false);
@@ -316,6 +317,26 @@
 			</Setting>
 
 			<RatingSetting />
+
+			{#if settings?.ratingSystem === RatingSystem.Tierlist}
+				<Setting
+					title="Default View"
+					desc="Open tierlist view by default instead of the watched list?"
+					row
+				>
+					<Checkbox
+						name="defaultView"
+						disabled={defaultViewDisabled}
+						value={settings?.defaultView === 1}
+						toggled={(on) => {
+							defaultViewDisabled = true;
+							updateUserSetting("defaultView", on ? 1 : 0, () => {
+								defaultViewDisabled = false;
+							});
+						}}
+					/>
+				</Setting>
+			{/if}
 
 			<div class="row btns">
 				<button onclick={() => goto("/import")}>Import</button>

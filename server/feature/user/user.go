@@ -59,6 +59,9 @@ func (s *Service) UserUpdate(userId uint, ur entity.UserSettings) (entity.UserSe
 	if ur.RatingStep != nil {
 		user.RatingStep = ur.RatingStep
 	}
+	if ur.DefaultView != nil {
+		user.DefaultView = ur.DefaultView
+	}
 	s.db.Save(&user)
 	return entity.UserSettings{
 		Private:                  user.Private,
@@ -87,6 +90,7 @@ func (s *Service) UserGetSettings(userId uint) (entity.UserSettings, error) {
 		Country:                  user.Country,
 		RatingSystem:             user.RatingSystem,
 		RatingStep:               user.RatingStep,
+		DefaultView:              user.DefaultView,
 	}, nil
 }
 
