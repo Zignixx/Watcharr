@@ -36,6 +36,314 @@
 	let savePresetDesc = $state("");
 	let tierlistContainer: HTMLDivElement | undefined = $state(undefined);
 	let exporting = $state(false);
+	let showGradientModal = $state(false);
+	let selectedGradient: string | null = $state(null);
+
+	// Gradient presets: arrays of HSL color stops
+	const gradientPresets: { name: string; id: string; stops: [number, number, number][] }[] = [
+		{
+			name: "Classic (Red → Green)",
+			id: "classic",
+			stops: [
+				[0, 100, 75],     // red
+				[30, 100, 75],    // orange
+				[50, 100, 75],    // yellow
+				[120, 100, 75],   // green
+			],
+		},
+		{
+			name: "Sunset",
+			id: "sunset",
+			stops: [
+				[350, 85, 60],    // deep rose
+				[15, 90, 62],     // warm red-orange
+				[30, 95, 65],     // orange
+				[42, 95, 68],     // amber
+				[50, 90, 72],     // golden yellow
+			],
+		},
+		{
+			name: "Ocean",
+			id: "ocean",
+			stops: [
+				[240, 80, 55],    // deep blue
+				[210, 85, 60],    // blue
+				[190, 90, 65],    // teal
+				[175, 80, 70],    // cyan
+			],
+		},
+		{
+			name: "Neon",
+			id: "neon",
+			stops: [
+				[320, 100, 65],   // neon pink
+				[270, 100, 70],   // purple
+				[210, 100, 65],   // blue
+				[180, 100, 65],   // cyan
+			],
+		},
+		{
+			name: "Pastel Rainbow",
+			id: "pastel",
+			stops: [
+				[0, 70, 82],      // soft red
+				[40, 70, 82],     // soft orange
+				[60, 65, 82],     // soft yellow
+				[120, 50, 80],    // soft green
+				[210, 60, 82],    // soft blue
+				[270, 55, 82],    // soft purple
+			],
+		},
+		{
+			name: "Forest",
+			id: "forest",
+			stops: [
+				[90, 50, 45],     // olive
+				[110, 45, 50],    // forest green
+				[140, 40, 55],    // sage
+				[160, 35, 60],    // seafoam
+			],
+		},
+		{
+			name: "Cherry Blossom",
+			id: "cherry",
+			stops: [
+				[340, 70, 55],    // deep pink
+				[345, 65, 65],    // rose
+				[350, 60, 75],    // light pink
+				[355, 55, 82],    // blush
+			],
+		},
+		{
+			name: "Aurora",
+			id: "aurora",
+			stops: [
+				[280, 80, 55],    // violet
+				[240, 75, 60],    // blue
+				[180, 85, 45],    // teal
+				[140, 80, 55],    // emerald
+				[60, 90, 65],     // yellow-green
+			],
+		},
+		{
+			name: "Fire",
+			id: "fire",
+			stops: [
+				[55, 100, 75],    // bright yellow
+				[35, 100, 60],    // orange
+				[15, 95, 50],     // red-orange
+				[0, 90, 40],      // deep red
+			],
+		},
+		{
+			name: "Lavender Dream",
+			id: "lavender",
+			stops: [
+				[260, 65, 75],    // lavender
+				[280, 55, 70],    // purple
+				[300, 50, 75],    // orchid
+				[320, 55, 78],    // soft pink
+			],
+		},
+		{
+			name: "Earth Tones",
+			id: "earth",
+			stops: [
+				[25, 60, 45],     // brown
+				[30, 55, 55],     // tan
+				[40, 50, 65],     // sand
+				[45, 45, 75],     // cream
+			],
+		},
+		{
+			name: "Cyberpunk",
+			id: "cyberpunk",
+			stops: [
+				[300, 100, 50],   // magenta
+				[270, 100, 55],   // electric purple
+				[200, 100, 50],   // electric blue
+				[170, 100, 50],   // neon teal
+			],
+		},
+		{
+			name: "Candy",
+			id: "candy",
+			stops: [
+				[340, 80, 70],    // hot pink
+				[20, 90, 75],     // peach
+				[50, 85, 75],     // yellow
+				[150, 70, 70],    // mint
+				[190, 80, 72],    // sky blue
+			],
+		},
+		{
+			name: "Vintage",
+			id: "vintage",
+			stops: [
+				[10, 45, 50],     // rust
+				[25, 40, 58],     // terracotta
+				[40, 35, 66],     // camel
+				[55, 30, 72],     // wheat
+			],
+		},
+		{
+			name: "Royal",
+			id: "royal",
+			stops: [
+				[45, 90, 65],     // gold
+				[280, 60, 45],    // royal purple
+				[220, 65, 40],    // navy
+				[0, 0, 25],       // near black
+			],
+		},
+		{
+			name: "Tropical",
+			id: "tropical",
+			stops: [
+				[50, 95, 60],     // mango
+				[30, 100, 65],    // tangerine
+				[350, 85, 60],    // hibiscus
+				[310, 70, 55],    // orchid purple
+				[170, 75, 45],    // palm green
+			],
+		},
+		{
+			name: "Ice",
+			id: "ice",
+			stops: [
+				[200, 40, 85],    // pale blue
+				[210, 55, 75],    // light steel
+				[215, 65, 65],    // ice blue
+				[220, 50, 55],    // steel
+			],
+		},
+		{
+			name: "Autumn",
+			id: "autumn",
+			stops: [
+				[5, 75, 45],      // dark red
+				[20, 80, 50],     // burnt orange
+				[35, 85, 60],     // orange
+				[45, 80, 65],     // amber
+				[55, 70, 70],     // golden
+			],
+		},
+		{
+			name: "Galaxy",
+			id: "galaxy",
+			stops: [
+				[260, 80, 25],    // deep space
+				[280, 70, 40],    // nebula purple
+				[240, 75, 55],    // bright blue
+				[200, 80, 70],    // star cyan
+				[50, 90, 80],     // starlight
+			],
+		},
+		{
+			name: "Bubblegum",
+			id: "bubblegum",
+			stops: [
+				[330, 80, 75],    // pink
+				[300, 65, 78],    // light purple
+				[270, 70, 78],    // periwinkle
+				[240, 75, 80],    // light blue
+			],
+		},
+		{
+			name: "Midnight",
+			id: "midnight",
+			stops: [
+				[240, 60, 20],    // deep navy
+				[250, 55, 30],    // dark indigo
+				[260, 50, 40],    // twilight
+				[270, 45, 50],    // dusk purple
+			],
+		},
+		{
+			name: "Rainbow",
+			id: "rainbow",
+			stops: [
+				[0, 85, 65],      // red
+				[30, 90, 65],     // orange
+				[55, 90, 68],     // yellow
+				[120, 70, 58],    // green
+				[210, 80, 60],    // blue
+				[270, 70, 60],    // indigo
+				[310, 75, 65],    // violet
+			],
+		},
+		{
+			name: "Monochrome",
+			id: "mono",
+			stops: [
+				[0, 0, 85],       // light gray
+				[0, 0, 55],       // mid gray
+				[0, 0, 35],       // dark gray
+			],
+		},
+	];
+
+	function interpolateHSL(
+		stops: [number, number, number][],
+		count: number,
+	): { color: string; textColor: string }[] {
+		if (count <= 0) return [];
+		if (count === 1) {
+			const [h, s, l] = stops[0];
+			return [{ color: hslToHex(h, s, l), textColor: l > 65 ? "#000000" : "#ffffff" }];
+		}
+		const results: { color: string; textColor: string }[] = [];
+		for (let i = 0; i < count; i++) {
+			const t = i / (count - 1);
+			const segmentCount = stops.length - 1;
+			const segment = Math.min(Math.floor(t * segmentCount), segmentCount - 1);
+			const localT = (t * segmentCount) - segment;
+			const [h1, s1, l1] = stops[segment];
+			const [h2, s2, l2] = stops[segment + 1];
+			// Shortest path hue interpolation (handles wrapping around 360°)
+			let dh = h2 - h1;
+			if (dh > 180) dh -= 360;
+			if (dh < -180) dh += 360;
+			const h = ((h1 + dh * localT) % 360 + 360) % 360;
+			const s = s1 + (s2 - s1) * localT;
+			const l = l1 + (l2 - l1) * localT;
+			results.push({
+				color: hslToHex(h, s, l),
+				textColor: l > 65 ? "#000000" : "#ffffff",
+			});
+		}
+		return results;
+	}
+
+	function hslToHex(h: number, s: number, l: number): string {
+		s /= 100;
+		l /= 100;
+		const a = s * Math.min(l, 1 - l);
+		const f = (n: number) => {
+			const k = (n + h / 30) % 12;
+			const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+			return Math.round(255 * color).toString(16).padStart(2, "0");
+		};
+		return `#${f(0)}${f(8)}${f(4)}`;
+	}
+
+	function getGradientPreview(gradientId: string) {
+		const preset = gradientPresets.find((g) => g.id === gradientId);
+		if (!preset) return [];
+		return interpolateHSL(preset.stops, tiers.length);
+	}
+
+	function applyGradient() {
+		if (!selectedGradient) return;
+		const colors = getGradientPreview(selectedGradient);
+		tiers = tiers.map((tier, i) => ({
+			...tier,
+			color: colors[i]?.color ?? tier.color,
+			textColor: colors[i]?.textColor ?? tier.textColor,
+		}));
+		showGradientModal = false;
+		selectedGradient = null;
+	}
 
 	// Overlay state
 	let overlayExpanded = $state(true);
@@ -725,6 +1033,9 @@
 				<button class="btn-add" onclick={() => (showAddTierModal = true)}>
 					Add Tier
 				</button>
+				<button class="btn-add" onclick={() => { selectedGradient = 'classic'; showGradientModal = true; }}>
+					Auto Color
+				</button>
 			{/if}
 			<button class="btn-add" onclick={exportTierlist} disabled={exporting || loading}>
 				{#if exporting}Exporting...{:else}Export PNG{/if}
@@ -855,9 +1166,9 @@
 
 		{#if editMode}
 			<div class="untiered-section" class:collapsed={!overlayExpanded} class:dragging={dragItem !== null}>
-				<div class="untiered-header" onclick={() => (overlayExpanded = !overlayExpanded)}>
+				<div class="untiered-header">
 					<h3>Untiered ({untieredWatched.length})</h3>
-					<div class="untiered-filters" onclick={(e) => e.stopPropagation()}>
+					<div class="untiered-filters">
 						{#each statusLabels as sl}
 							<button
 								class="filter-chip"
@@ -868,7 +1179,7 @@
 							</button>
 						{/each}
 					</div>
-					<button class="overlay-toggle" title={overlayExpanded ? "Collapse" : "Expand"}>
+					<button class="overlay-toggle" title={overlayExpanded ? "Collapse" : "Expand"} onclick={() => (overlayExpanded = !overlayExpanded)}>
 						<Icon i="chevron" wh={14} facing={overlayExpanded ? "down" : "up"} />
 					</button>
 				</div>
@@ -1043,6 +1354,50 @@
 			Save Current Tiers as Preset
 		</button>
 		<p class="preset-note">Existing tiers will be renamed & recolored. Extra tiers beyond the preset are kept. New tiers are added if needed.</p>
+	</Modal>
+{/if}
+
+<!-- Auto Color Gradient Modal -->
+{#if showGradientModal}
+	<Modal title="Auto Color Gradient" onClose={() => { showGradientModal = false; selectedGradient = null; }}>
+		<div class="gradient-modal">
+			<div class="gradient-options">
+				{#each gradientPresets as gp}
+					<button
+						class="gradient-option"
+						class:selected={selectedGradient === gp.id}
+						onclick={() => (selectedGradient = gp.id)}
+					>
+						<div class="gradient-swatch">
+							{#each interpolateHSL(gp.stops, Math.max(tiers.length, 4)) as c}
+								<div style="background-color: {c.color}; flex: 1;"></div>
+							{/each}
+						</div>
+						<span>{gp.name}</span>
+					</button>
+				{/each}
+			</div>
+
+			{#if selectedGradient}
+				<div class="gradient-preview-section">
+					<div class="gradient-preview-label">Preview</div>
+					<div class="gradient-preview-tiers">
+						{#each getGradientPreview(selectedGradient) as colors, i}
+							<div
+								class="gradient-preview-tier"
+								style="background-color: {colors.color}; color: {colors.textColor};"
+							>
+								{tiers[i]?.name ?? ""}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<button class="btn-save" onclick={applyGradient} disabled={!selectedGradient}>
+				Apply Gradient
+			</button>
+		</div>
 	</Modal>
 {/if}
 
@@ -1420,12 +1775,7 @@
 		align-items: center;
 		gap: 12px;
 		padding: 10px 20px;
-		cursor: pointer;
 		user-select: none;
-
-		&:hover {
-			background: rgba(128, 128, 128, 0.05);
-		}
 	}
 
 	.untiered-filters {
@@ -1663,6 +2013,96 @@
 		opacity: 0.45;
 		line-height: 1.4;
 		text-align: center;
+	}
+
+	/* Auto Color Gradient Modal */
+	.gradient-modal {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		min-width: 340px;
+	}
+
+	.gradient-options {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-height: 280px;
+		overflow-y: auto;
+		padding-right: 4px;
+	}
+
+	.gradient-option {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 8px 12px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(128, 128, 128, 0.2);
+		background: rgba(128, 128, 128, 0.04);
+		color: $text-color;
+		cursor: pointer;
+		transition: all 150ms ease;
+		text-align: left;
+
+		&:hover {
+			background: rgba(128, 128, 128, 0.1);
+			border-color: rgba(128, 128, 128, 0.35);
+		}
+
+		&.selected {
+			border-color: $accent-color-hover;
+			background: rgba(128, 128, 128, 0.08);
+		}
+
+		span {
+			font-size: 13px;
+			font-weight: 500;
+			white-space: nowrap;
+		}
+	}
+
+	.gradient-swatch {
+		display: flex;
+		width: 80px;
+		height: 24px;
+		border-radius: 6px;
+		overflow: hidden;
+		flex-shrink: 0;
+	}
+
+	.gradient-preview-section {
+		border-top: 1px solid rgba(128, 128, 128, 0.15);
+		padding-top: 12px;
+	}
+
+	.gradient-preview-label {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		opacity: 0.45;
+		margin-bottom: 8px;
+	}
+
+	.gradient-preview-tiers {
+		display: flex;
+		flex-direction: column;
+		border-radius: 10px;
+		overflow: hidden;
+		border: 1px solid rgba(128, 128, 128, 0.12);
+	}
+
+	.gradient-preview-tier {
+		padding: 8px 16px;
+		font-weight: 700;
+		font-size: 16px;
+		text-align: center;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+
+		&:last-child {
+			border-bottom: none;
+		}
 	}
 
 	.preset-section-label {
