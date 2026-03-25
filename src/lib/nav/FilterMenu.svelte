@@ -55,6 +55,14 @@
 				GAME
 			</button>
 		{/if}
+		{#if store.serverFeatures?.manga}
+			<button
+				class:active={store.activeFilters.type.includes("manga")}
+				onclick={() => filterClicked("type", "manga")}
+			>
+				MANGA
+			</button>
+		{/if}
 	</div>
 	<h4 class="norm sm-caps">status</h4>
 	<button

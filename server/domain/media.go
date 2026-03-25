@@ -6,6 +6,7 @@ package domain
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/sbondCo/Watcharr/database/entity"
@@ -20,6 +21,8 @@ const (
 	MediaTypeTMDBPerson MediaType = "tmdb_person"
 
 	MediaTypeIGDBGame MediaType = "igdb_game"
+
+	MediaTypeMALManga MediaType = "mal_manga"
 )
 
 type Media struct {
@@ -87,6 +90,19 @@ type Media struct {
 	GameModes []MediaGenre `json:"gameModes,omitempty"`
 
 	//
+	// Properties only for Manga
+	//
+
+	// Number of chapters.
+	MangaChapters int `json:"mangaChapters,omitempty"`
+	// Number of volumes.
+	MangaVolumes int `json:"mangaVolumes,omitempty"`
+	// Publishing status.
+	MangaStatus string `json:"mangaStatus,omitempty"`
+	// Authors.
+	MangaAuthors []string `json:"mangaAuthors,omitempty"`
+
+	//
 	// Properties only for recommendations.
 	//
 
@@ -107,6 +123,8 @@ func (t Media) GetId() int {
 		return t.IDs.TMDB
 	case MediaTypeIGDBGame:
 		return t.IDs.IGDB
+	case MediaTypeMALManga:
+		return t.IDs.MAL
 	}
 	return -99
 }
@@ -120,6 +138,8 @@ func (t Media) GetMediaType() util.SupportedMedia {
 		return util.SupportedMediaShow
 	case MediaTypeIGDBGame:
 		return util.SupportedMediaGame
+	case MediaTypeMALManga:
+		return util.SupportedMediaManga
 	}
 	// Unsupported...
 	slog.Warn("GetMediaType: Requested, but unsupported type encountered.",
@@ -139,6 +159,9 @@ type MediaIDs struct {
 
 	// For igdb data
 	IGDB int `json:"igdb,omitempty"`
+
+	// For MAL/Jikan manga data
+	MAL int `json:"mal,omitempty"`
 }
 
 type MediaGenre struct {
@@ -167,6 +190,8 @@ func NewMediaFromWatched(w *entity.Watched, watchedDto *WatchedDto) Media {
 		media = NewMediaFromContent(w.Content)
 	} else if w.Game != nil {
 		media = NewMediaFromGame(w.Game)
+	} else if w.Manga != nil {
+		media = NewMediaFromManga(w.Manga)
 	}
 
 	media.Watched = *watchedDto
@@ -215,6 +240,43 @@ func NewMediaFromGame(c *entity.Game) Media {
 	}
 	if c.ReleaseDate != nil {
 		m.ReleaseDate = *c.ReleaseDate
+	}
+	return m
+}
+
+// Converter for Manga entity to Media
+func NewMediaFromManga(c *entity.Manga) Media {
+	m := Media{
+		IDs: MediaIDs{
+			MAL: c.MalID,
+		},
+		Type:          MediaTypeMALManga,
+		Name:          c.Title,
+		Summary:       c.Synopsis,
+		Poster:        c.Poster,
+		ExtPosterPath: c.PosterURL,
+		Rating:        uint(c.Score),
+		RatingCount:   uint(c.ScoredBy),
+		MangaChapters: c.Chapters,
+		MangaVolumes:  c.Volumes,
+		MangaStatus:   c.Status,
+	}
+	if c.ReleaseDate != nil {
+		m.ReleaseDate = *c.ReleaseDate
+	}
+	if c.Authors != "" {
+		for _, a := range strings.Split(c.Authors, "|") {
+			if a != "" {
+				m.MangaAuthors = append(m.MangaAuthors, a)
+			}
+		}
+	}
+	if c.Genres != "" {
+		for _, g := range strings.Split(c.Genres, "|") {
+			if g != "" {
+				m.Genres = append(m.Genres, MediaGenre{Name: g})
+			}
+		}
 	}
 	return m
 }

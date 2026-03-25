@@ -13,6 +13,7 @@ import (
 	"github.com/sbondCo/Watcharr/config"
 	"github.com/sbondCo/Watcharr/database/entity"
 	"github.com/sbondCo/Watcharr/domain"
+	"github.com/sbondCo/Watcharr/media/jikan"
 	"github.com/sbondCo/Watcharr/media/tmdb"
 	"github.com/sbondCo/Watcharr/util"
 	"gorm.io/gorm"
@@ -37,6 +38,7 @@ type Service struct {
 	cfg             *config.ServerConfig
 	contentProvider ContentProvider
 	watchedProvider ServiceWatchedProvider
+	jikan           *jikan.Jikan
 }
 
 func NewService(
@@ -44,12 +46,14 @@ func NewService(
 	cfg *config.ServerConfig,
 	contentProvider ContentProvider,
 	watchedProvider ServiceWatchedProvider,
+	jikan *jikan.Jikan,
 ) *Service {
 	return &Service{
 		db,
 		cfg,
 		contentProvider,
 		watchedProvider,
+		jikan,
 	}
 }
 
@@ -103,6 +107,10 @@ func (s *Service) Search(
 		if err := s.searchGame(r.Query, pp.Page, &resp); err != nil {
 			return resp, errors.New("game search failed")
 		}
+	case domain.SearchTypeManga:
+		if err := s.searchManga(r.Query, pp.Page, &resp); err != nil {
+			return resp, errors.New("manga search failed")
+		}
 	}
 	return resp, nil
 }
@@ -141,6 +149,20 @@ func (s *Service) searchMulti(
 				resp.Results,
 				v.AsMedia(),
 			)
+		}
+	}
+	// Jikan/MAL Manga (we will only get results for the first page)
+	if page == 1 && s.jikan != nil {
+		jikanRes, err := s.jikan.Search(query)
+		if err != nil {
+			slog.Error("SearchMulti: Failed to search jikan!", "error", err)
+		} else {
+			for _, v := range jikanRes.Data {
+				resp.Results = append(
+					resp.Results,
+					v.AsMedia(),
+				)
+			}
 		}
 	}
 	resp.Page = tmdbRes.Page
@@ -278,6 +300,32 @@ func (s *Service) searchGame(
 	resp.Page = 1
 	resp.TotalPages = 1
 	resp.TotalResults = int64(len(igdbRes))
+	return nil
+}
+
+func (s *Service) searchManga(
+	query string,
+	page int,
+	resp *domain.SearchResponse,
+) error {
+	slog.Debug("searchManga: Running.", "query", query, "page", page)
+	if s.jikan == nil {
+		return errors.New("jikan client not available")
+	}
+	jikanRes, err := s.jikan.Search(query)
+	if err != nil {
+		slog.Error("searchManga: Failed to search jikan!", "error", err)
+		return errors.New("content request failed")
+	}
+	for _, v := range jikanRes.Data {
+		resp.Results = append(
+			resp.Results,
+			v.AsMedia(),
+		)
+	}
+	resp.Page = 1
+	resp.TotalPages = 1
+	resp.TotalResults = int64(len(jikanRes.Data))
 	return nil
 }
 

@@ -2,15 +2,16 @@
 	import Icon from "../Icon.svelte";
 	import { store } from "@/store.svelte";
 
-	type FilterType = "movie" | "show" | "game" | "person";
+	type FilterType = "movie" | "show" | "game" | "person" | "manga";
 
 	interface Props {
 		active?: string;
 		disabled?: boolean;
+		hideManga?: boolean;
 		onChange: (nowActive: FilterType) => void;
 	}
 
-	let { active, disabled, onChange }: Props = $props();
+	let { active, disabled, hideManga, onChange }: Props = $props();
 </script>
 
 <div class:disabled>
@@ -35,6 +36,15 @@
 			onclick={() => onChange("game")}
 		>
 			<Icon i="gamepad" wh={20} /> Games
+		</button>
+	{/if}
+	{#if store.serverFeatures?.manga && !hideManga}
+		<button
+			class="plain"
+			data-active={active === "manga"}
+			onclick={() => onChange("manga")}
+		>
+			Manga
 		</button>
 	{/if}
 	<button

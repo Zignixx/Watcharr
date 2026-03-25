@@ -124,6 +124,14 @@ func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId stri
 			return []FollowThoughts{}, errors.New("failed to find content")
 		}
 		contentOrGameId = content.ID
+	} else if mediaType == "manga" {
+		var content entity.Manga
+		res = s.db.Where("mal_id = ?", mediaId).Select("id").Find(&content)
+		if res.Error != nil {
+			slog.Error("getFollows: Error finding manga from db.", "error", res.Error)
+			return []FollowThoughts{}, errors.New("failed to find manga")
+		}
+		contentOrGameId = content.ID
 	} else if mediaType == "movie" || mediaType == "tv" {
 		// Get our content id from type and tmdbId
 		var content entity.Content
@@ -134,13 +142,15 @@ func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId stri
 		}
 		contentOrGameId = content.ID
 	} else {
-		slog.Error("getFollows: Unrecognized media type (movie, tv or game supported).", "media_type", mediaType)
+		slog.Error("getFollows: Unrecognized media type (movie, tv, game or manga supported).", "media_type", mediaType)
 		return []FollowThoughts{}, errors.New("unrecognized media type")
 	}
 	// Get list of followeds watcheds for this content
 	var fw []entity.Watched
 	if mediaType == "game" {
 		res = s.db.Where("game_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
+	} else if mediaType == "manga" {
+		res = s.db.Where("manga_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
 	} else {
 		res = s.db.Where("content_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
 	}

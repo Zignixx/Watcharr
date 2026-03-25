@@ -198,7 +198,7 @@
 								name={w.name}
 								path={w.extPosterPath}
 							/>
-						{:else if w.type === MediaTypeE.tmdbMovie || w.type === MediaTypeE.tmdbShow || w.type === MediaTypeE.igdbGame}
+						{:else if w.type === MediaTypeE.tmdbMovie || w.type === MediaTypeE.tmdbShow || w.type === MediaTypeE.igdbGame || w.type === MediaTypeE.malManga}
 							<Poster
 								media={w}
 								bind:watched={dataLoader.state.data[i].watched}

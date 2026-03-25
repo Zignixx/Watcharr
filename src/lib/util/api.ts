@@ -166,6 +166,8 @@ export async function updateWatched(
 			req.tmdbId = opts.contentId;
 		} else if (opts.contentType === "game") {
 			req.igdbId = opts.contentId;
+		} else if (opts.contentType === "manga") {
+			req.malId = opts.contentId;
 		} else {
 			throw "invalid contentType";
 		}

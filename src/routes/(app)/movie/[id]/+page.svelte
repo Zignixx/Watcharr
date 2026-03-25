@@ -150,6 +150,7 @@
 						/>
 
 						<span class="quick-info">
+							<span class="type-badge">Movie</span>
 							<span>{movie.runtime} min</span>
 
 							{#if movie.genres && movie.genres?.length > 0}
@@ -314,6 +315,14 @@
 				display: flex;
 				gap: 10px;
 				margin-bottom: 8px;
+
+				.type-badge {
+					background: rgba(255, 255, 255, 0.15);
+					padding: 2px 8px;
+					border-radius: 4px;
+					font-size: 0.85em;
+					font-weight: 600;
+				}
 			}
 
 			.btns {

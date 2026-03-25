@@ -10,6 +10,7 @@ type ServerFeatures struct {
 	Sonarr bool `json:"sonarr"`
 	Radarr bool `json:"radarr"`
 	Games  bool `json:"games"`
+	Manga  bool `json:"manga"`
 }
 
 type Service struct {
@@ -27,6 +28,7 @@ func NewService(cfg *config.ServerConfig) *Service {
 // which btns should be shown, etc.
 func (s *Service) GetEnabledFeatures(userPerms int) ServerFeatures {
 	var f ServerFeatures
+	f.Manga = true
 	if s.cfg.TwitchEnabled() {
 		f.Games = true
 	}

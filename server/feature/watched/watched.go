@@ -22,10 +22,15 @@ type GameProvider interface {
 	GetOrCache(igdbID int) (entity.Game, error)
 }
 
+type MangaProvider interface {
+	GetOrCache(malID int) (entity.Manga, error)
+}
+
 type Service struct {
 	db               *gorm.DB
 	cp               ContentProvider
 	gameProvider     GameProvider
+	mangaProvider    MangaProvider
 	activityProvider domain.ActivityAddProvider
 }
 
@@ -33,12 +38,14 @@ func NewService(
 	db *gorm.DB,
 	cp ContentProvider,
 	gameProvider GameProvider,
+	mangaProvider MangaProvider,
 	activityProvider domain.ActivityAddProvider,
 ) *Service {
 	return &Service{
 		db,
 		cp,
 		gameProvider,
+		mangaProvider,
 		activityProvider,
 	}
 }
@@ -50,6 +57,8 @@ func (s *Service) getWatched(userId uint) ([]entity.Watched, error) {
 		Preload("Content").
 		Preload("Game").
 		Preload("Game.Poster").
+		Preload("Manga").
+		Preload("Manga.Poster").
 		Preload("Activity").
 		Preload("WatchedSeasons").
 		Preload("WatchedEpisodes").
@@ -89,7 +98,7 @@ func (s *Service) GetWatchedPage(
 		// Search query
 		if extraProps.Query != "" {
 			q := "%" + extraProps.Query + "%"
-			res = res.Where("Content.Title LIKE ? OR Game.Name LIKE ?", q, q)
+			res = res.Where("Content.Title LIKE ? OR Game.Name LIKE ? OR Manga.Title LIKE ?", q, q, q)
 		}
 	}
 
@@ -97,6 +106,8 @@ func (s *Service) GetWatchedPage(
 		Joins("Content").
 		Joins("Game").
 		Preload("Game.Poster").
+		Joins("Manga").
+		Preload("Manga.Poster").
 		Preload("Tags").
 		Preload("WatchedSeasons").
 		Preload("WatchedEpisodes").
@@ -159,6 +170,8 @@ func (s *Service) getPublicWatched(
 		Joins("Content").
 		Joins("Game").
 		Preload("Game.Poster").
+		Joins("Manga").
+		Preload("Manga.Poster").
 		Preload("Tags").
 		Preload("WatchedSeasons").
 		Preload("WatchedEpisodes").
@@ -287,6 +300,49 @@ func (s *Service) GetWatchedItemsByIgdbIds(userId uint, c []int) ([]entity.Watch
 	return *watched, nil
 }
 
+// Get a watched list item by manga (mal) id (must be for `userId`).
+func (s *Service) GetWatchedItemByMalId(userId uint, malId uint) (entity.Watched, error) {
+	slog.Debug("GetWatchedItemByMalId: Running.", "userId", userId, "malId", malId)
+	watched := new(entity.Watched)
+	res := s.db.Model(&entity.Watched{}).
+		Joins("Manga").
+		Preload("Manga.Poster").
+		Preload("Activity").
+		Preload("Tags").
+		Where("user_id = ? AND Manga.mal_id = ?", userId, malId).
+		Take(&watched)
+	if res.Error != nil {
+		slog.Error("GetWatchedItemByMalId: Failed!", "error", res.Error)
+		return entity.Watched{}, res.Error
+	}
+	slog.Debug("GetWatchedItemByMalId: Done.", "userId", userId, "malId", malId, "watched_item", watched)
+	return *watched, nil
+}
+
+// Same as `GetWatchedItemByMalId` except for getting in bulk.
+func (s *Service) GetWatchedItemsByMalIds(userId uint, c []int) ([]entity.Watched, error) {
+	slog.Debug("GetWatchedItemsByMalIds: Running.", "userId", userId, "c", c)
+	watched := new([]entity.Watched)
+	res := s.db.Model(&entity.Watched{}).
+		Joins("Manga").
+		Preload("Manga.Poster").
+		Preload("Activity").
+		Preload("Tags").
+		Where("user_id = ?", userId).
+		Where("(Manga.mal_id) IN ?", c).
+		Find(&watched)
+	if res.Error != nil {
+		slog.Error("GetWatchedItemsByMalIds: Failed!", "error", res.Error)
+		return []entity.Watched{}, res.Error
+	}
+	slog.Debug(
+		"GetWatchedItemsByMalIds: Done.",
+		"userId", userId,
+		"watcheds_found", len(*watched),
+	)
+	return *watched, nil
+}
+
 // Get watched item by an id and SupportedMedia type.
 func (s *Service) GetWatchedItemBySupportedMediaId(userId uint, id uint, t util.SupportedMedia) (entity.Watched, error) {
 	switch t {
@@ -296,6 +352,8 @@ func (s *Service) GetWatchedItemBySupportedMediaId(userId uint, id uint, t util.
 		return s.GetWatchedItemByTmdbId(userId, id, entity.MOVIE)
 	case util.SupportedMediaShow:
 		return s.GetWatchedItemByTmdbId(userId, id, entity.SHOW)
+	case util.SupportedMediaManga:
+		return s.GetWatchedItemByMalId(userId, id)
 	}
 	slog.Error("GetWatchedItemBySupportedMediaId: Unsupported supportedmedia type",
 		"type", t)
@@ -308,6 +366,7 @@ func (s *Service) GetWatchedItemsBySupportedMediaIds(userId uint, c []addedtocon
 	// First we want to separate `c` into slices we can pass to the respective functions.
 	tmdbIds := [][]any{}
 	igdbIds := []int{}
+	malIds := []int{}
 	for _, v := range c {
 		switch v.Type {
 		case util.SupportedMediaMovie:
@@ -316,6 +375,8 @@ func (s *Service) GetWatchedItemsBySupportedMediaIds(userId uint, c []addedtocon
 			tmdbIds = append(tmdbIds, []any{v.Id, entity.SHOW})
 		case util.SupportedMediaGame:
 			igdbIds = append(igdbIds, v.Id)
+		case util.SupportedMediaManga:
+			malIds = append(malIds, v.Id)
 		}
 	}
 	// Now call each function relating to an overarching type.
@@ -333,6 +394,14 @@ func (s *Service) GetWatchedItemsBySupportedMediaIds(userId uint, c []addedtocon
 			watcheds = append(watcheds, w...)
 		} else {
 			slog.Error("GetWatchedItemsBySupportedMediaIds: Failed to get items by igdb ids.", "error", err)
+			return []entity.Watched{}, err
+		}
+	}
+	if len(malIds) > 0 {
+		if w, err := s.GetWatchedItemsByMalIds(userId, malIds); err == nil {
+			watcheds = append(watcheds, w...)
+		} else {
+			slog.Error("GetWatchedItemsBySupportedMediaIds: Failed to get items by mal ids.", "error", err)
 			return []entity.Watched{}, err
 		}
 	}
@@ -398,6 +467,18 @@ func (s *Service) AddWatched(
 			return entity.Watched{}, errors.New("failed to find game by id")
 		}
 		watched.GameID = &game.ID
+	case "manga":
+		if ar.MALID == 0 {
+			return entity.Watched{}, errors.New("missing mal id")
+		}
+		manga, err := s.mangaProvider.GetOrCache(ar.MALID)
+		if err != nil {
+			return entity.Watched{}, err
+		}
+		if manga.ID == 0 {
+			return entity.Watched{}, errors.New("failed to find manga by id")
+		}
+		watched.MangaID = &manga.ID
 	default:
 		return entity.Watched{}, errors.New("invalid content type provided")
 	}
@@ -405,7 +486,7 @@ func (s *Service) AddWatched(
 	// Set default status for when content is added by
 	// rating it instead of giving status first.
 	if ar.Status == "" {
-		if ar.ContentType == "movie" || ar.ContentType == "game" {
+		if ar.ContentType == "movie" || ar.ContentType == "game" || ar.ContentType == "manga" {
 			ar.Status = entity.FINISHED
 		} else {
 			ar.Status = entity.WATCHING
@@ -501,11 +582,13 @@ func (s *Service) restoreWatchedAfterDuplicatedKeyErr(
 	if whereStmt.UserID == 0 {
 		return errors.New("no userid in provided watched struct")
 	}
-	// ...AND a (contentId || gameId).
+	// ...AND a (contentId || gameId || mangaId).
 	if watchedOut.ContentID != nil && *watchedOut.ContentID != 0 {
 		whereStmt.ContentID = watchedOut.ContentID
 	} else if watchedOut.GameID != nil && *watchedOut.GameID != 0 {
 		whereStmt.GameID = watchedOut.GameID
+	} else if watchedOut.MangaID != nil && *watchedOut.MangaID != 0 {
+		whereStmt.MangaID = watchedOut.MangaID
 	} else {
 		return errors.New("no supported media ids in provided watched struct")
 	}

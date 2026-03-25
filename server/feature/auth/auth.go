@@ -91,6 +91,20 @@ type Service struct {
 	plexProvider PlexProvider
 }
 
+// validateUsername checks that a username is between 1 and 50 characters
+// and contains only alphanumeric characters, underscores, or hyphens.
+func validateUsername(username string) error {
+	if len(username) == 0 || len(username) > 50 {
+		return errors.New("username must be between 1 and 50 characters")
+	}
+	for _, c := range username {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return errors.New("username can only contain letters, numbers, underscores and hyphens")
+		}
+	}
+	return nil
+}
+
 func NewService(db *gorm.DB, cfg *config.ServerConfig, plexProvider PlexProvider) *Service {
 	return &Service{
 		db,
@@ -103,6 +117,10 @@ func (s *Service) Register(ur *UserRegisterRequest, initialPerm int) (AuthRespon
 	if !s.cfg.SIGNUP_ENABLED {
 		slog.Warn("Register: Register called, but signing up is disabled.")
 		return AuthResponse{}, errors.New("registering is disabled")
+	}
+	ur.Username = strings.TrimSpace(ur.Username)
+	if err := validateUsername(ur.Username); err != nil {
+		return AuthResponse{}, err
 	}
 	var user entity.User = entity.User{Username: ur.Username, Password: ur.Password}
 	slog.Info("Register: A user is registering", "username", user.Username)

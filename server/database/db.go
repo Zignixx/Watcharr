@@ -32,6 +32,7 @@ func New() (*gorm.DB, error) {
 		&entity.Follow{},
 		&entity.Image{},
 		&entity.Game{},
+		&entity.Manga{},
 		&entity.ArrRequest{},
 		&entity.Tag{},
 		&entity.Tier{},

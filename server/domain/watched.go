@@ -173,7 +173,7 @@ func NewWatchedPublicGetPageResponse(w []entity.Watched) WatchedPublicGetPageRes
 // Add a watched entry request
 type WatchedAddRequest struct {
 	// Type of content we are adding to watched.
-	ContentType util.SupportedMedia `json:"contentType" binding:"required,oneof=movie tv game"`
+	ContentType util.SupportedMedia `json:"contentType" binding:"required,oneof=movie tv game manga"`
 	// ID of content from tmdb (if ContentType is movie or tv).
 	TMDBID int `json:"tmdbId"`
 	// DEPRECATED!! This will be removed soon, I've left it in only so any third
@@ -183,6 +183,8 @@ type WatchedAddRequest struct {
 	Deprecated_ContentID int `json:"contentId"`
 	// ID of content from igdb (if ContentType is game).
 	IGDBID int `json:"igdbId"`
+	// ID of content from MyAnimeList/Jikan (if ContentType is manga).
+	MALID int `json:"malId"`
 
 	Status   entity.WatchedStatus `json:"status"`
 	Rating   float64              `json:"rating" binding:"max=10"`

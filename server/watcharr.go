@@ -36,6 +36,7 @@ import (
 	"github.com/sbondCo/Watcharr/feature/imprt"
 	"github.com/sbondCo/Watcharr/feature/jellyfin"
 	"github.com/sbondCo/Watcharr/feature/job"
+	"github.com/sbondCo/Watcharr/feature/manga"
 	"github.com/sbondCo/Watcharr/feature/plex"
 	"github.com/sbondCo/Watcharr/feature/profile"
 	"github.com/sbondCo/Watcharr/feature/search"
@@ -49,6 +50,7 @@ import (
 	"github.com/sbondCo/Watcharr/feature/watched/episode"
 	"github.com/sbondCo/Watcharr/feature/watched/season"
 	"github.com/sbondCo/Watcharr/logging"
+	"github.com/sbondCo/Watcharr/media/jikan"
 	"github.com/sbondCo/Watcharr/media/tmdb"
 	"github.com/sbondCo/Watcharr/router"
 	taskl "github.com/sbondCo/Watcharr/task"
@@ -197,7 +199,9 @@ func main() {
 	userService := user.NewService(db)
 	userManageService := user.NewManageService(db)
 	gameService := game.NewService(db, &br.Cfg.TWITCH, activityService)
-	watchedService := watched.NewService(db, contentService, gameService, activityService)
+	jikanClient := jikan.NewJikan()
+	mangaService := manga.NewService(db, jikanClient, activityService)
+	watchedService := watched.NewService(db, contentService, gameService, mangaService, activityService)
 	watchedSeasonService := season.NewService(db, activityService)
 	watchedEpisodeService := episode.NewService(
 		db,
@@ -225,7 +229,7 @@ func main() {
 	followService := follow.NewService(db)
 	tagService := tag.NewService(db, watchedService)
 	tierlistService := tierlist.NewService(db)
-	searchService := search.NewService(db, br.Cfg, contentService, watchedService)
+	searchService := search.NewService(db, br.Cfg, contentService, watchedService, jikanClient)
 	discoverService := discover.NewService(db, br.Cfg, contentService, followService)
 	importService := imprt.NewService(
 		db,
@@ -258,6 +262,7 @@ func main() {
 	tag.NewRouter(br, tagService).AddRoutes()
 	tierlist.NewRouter(br, tierlistService).AddRoutes()
 	game.NewRouter(br, gameService, watchedService).AddRoutes()
+	manga.NewRouter(br, mangaService, watchedService).AddRoutes()
 	search.NewRouter(br, searchService, watchedService).AddRoutes()
 	discover.NewRouter(br, discoverService, watchedService).AddRoutes()
 

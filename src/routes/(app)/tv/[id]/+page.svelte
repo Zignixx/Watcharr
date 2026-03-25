@@ -151,6 +151,7 @@
 						/>
 
 						<span class="quick-info">
+							<span class="type-badge">Show</span>
 							{#if show.genres && show.genres?.length > 0}
 								<div>
 									{#each show.genres as g, i}
@@ -326,6 +327,14 @@
 				display: flex;
 				gap: 10px;
 				margin-bottom: 8px;
+
+				.type-badge {
+					background: rgba(255, 255, 255, 0.15);
+					padding: 2px 8px;
+					border-radius: 4px;
+					font-size: 0.85em;
+					font-weight: 600;
+				}
 			}
 
 			.btns {

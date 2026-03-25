@@ -16,7 +16,7 @@
 	}
 
 	interface Props {
-		mediaType: ContentType | "game";
+		mediaType: ContentType;
 		// The tmdbId for movie/tv, igdbId for games.
 		mediaId: number;
 	}
@@ -56,7 +56,7 @@
 						{#if ft.rating}
 							<span class="rating">
 								<span>*</span>
-								{ft.rating}
+								{Number.isInteger(ft.rating) ? ft.rating : ft.rating.toFixed(2)}
 							</span>
 						{/if}
 					</div>

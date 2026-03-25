@@ -7,7 +7,7 @@ export type WatchedStatus =
 /**
  * Types of media supported by Watcharr in an overarching way.
  */
-export type SupportedMedia = "tv" | "movie" | "game";
+export type SupportedMedia = "tv" | "movie" | "game" | "manga";
 export type ContentType = SupportedMedia | "tv_episode";
 export type MediaType = ContentType | "person";
 
@@ -168,6 +168,7 @@ export interface Watched {
 export interface WatchedAddRequest {
 	tmdbId?: number;
 	igdbId?: number;
+	malId?: number;
 	contentType: SupportedMedia;
 	rating?: number;
 	status?: WatchedStatus;
@@ -357,6 +358,7 @@ export interface MediaIDs {
 	tvdb?: number;
 
 	igdb?: number;
+	mal?: number;
 }
 
 export enum MediaTypeE {
@@ -364,6 +366,7 @@ export enum MediaTypeE {
 	tmdbShow = "tmdb_tv",
 	tmdbPerson = "tmdb_person",
 	igdbGame = "igdb_game",
+	malManga = "mal_manga",
 }
 
 export interface Media {
@@ -389,6 +392,10 @@ export interface Media {
 	seasons?: MediaSeason[];
 	isShowAnime?: boolean;
 	recommendedBy?: RecommendationSource[];
+	mangaChapters?: number;
+	mangaVolumes?: number;
+	mangaStatus?: string;
+	mangaAuthors?: string[];
 }
 
 export interface RecommendationSource {
@@ -404,6 +411,8 @@ export function getContentTypeFromMedia(m: Media): ContentType | undefined {
 			return "tv";
 		case MediaTypeE.igdbGame:
 			return "game";
+		case MediaTypeE.malManga:
+			return "manga";
 	}
 	return;
 }
@@ -450,6 +459,7 @@ export enum SearchType {
 	show = "show",
 	person = "person",
 	game = "game",
+	manga = "manga",
 }
 
 export interface SearchRequest extends PaginationParams {
@@ -814,6 +824,7 @@ export interface ServerFeatures {
 	sonarr: boolean;
 	radarr: boolean;
 	games: boolean;
+	manga: boolean;
 }
 
 export interface Follow {

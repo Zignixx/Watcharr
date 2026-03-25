@@ -164,6 +164,10 @@
 				id = media.ids.igdb;
 				type = "game";
 				break;
+			case MediaTypeE.malManga:
+				id = media.ids.mal;
+				type = "manga";
+				break;
 			default:
 				return;
 		}
@@ -197,6 +201,12 @@
 			}
 		} else if (media.type == MediaTypeE.igdbGame) {
 			return `https://images.igdb.com/igdb/image/upload/t_cover_big/${media.extPosterPath}.jpg`;
+		} else if (media.type == MediaTypeE.malManga) {
+			// Manga uses full external URLs from Jikan/MAL
+			if (media.poster?.path) {
+				return `${baseURL}/${media.poster.path}`;
+			}
+			return media.extPosterPath;
 		}
 	});
 	const link = $derived(meta?.id ? `/${meta.type}/${meta.id}` : undefined);
@@ -422,6 +432,7 @@
 					posterImgLoaded = -1;
 				}}
 			/>
+			<span class="type-badge">{meta?.type === "tv" ? "Show" : meta?.type === "movie" ? "Movie" : meta?.type === "game" ? "Game" : meta?.type === "manga" ? "Manga" : ""}</span>
 		{/if}
 		{#if watched && meta && !posterActive}
 			<!-- Must be on watched list, and poster not hovered -->
@@ -651,6 +662,20 @@
 		img {
 			width: 100%;
 			height: 100%;
+		}
+
+		.type-badge {
+			position: absolute;
+			top: 6px;
+			left: 6px;
+			background: rgba(0, 0, 0, 0.7);
+			color: white;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-size: 11px;
+			font-weight: 600;
+			pointer-events: none;
+			z-index: 1;
 		}
 
 		&.details-shown .img-loader {

@@ -3,6 +3,7 @@ package user
 import (
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/sbondCo/Watcharr/database/entity"
 	"github.com/sbondCo/Watcharr/domain"
@@ -57,9 +58,14 @@ func (s *ManageService) Manage(userId uint, ur domain.UpdateUserRequest) error {
 		}
 	}
 	if ur.Username != nil {
-		newUsername := *ur.Username
+		newUsername := strings.TrimSpace(*ur.Username)
 		if len(newUsername) == 0 || len(newUsername) > 50 {
 			return errors.New("username must be between 1 and 50 characters")
+		}
+		for _, c := range newUsername {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+				return errors.New("username can only contain letters, numbers, underscores and hyphens")
+			}
 		}
 		// Check if username is already taken (by another user of the same type)
 		var existing entity.User

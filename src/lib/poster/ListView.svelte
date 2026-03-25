@@ -40,6 +40,8 @@
 				id = media.ids.tmdb; type = "tv"; break;
 			case MediaTypeE.igdbGame:
 				id = media.ids.igdb; type = "game"; break;
+			case MediaTypeE.malManga:
+				id = media.ids.mal; type = "manga"; break;
 			default:
 				return undefined;
 		}
@@ -51,6 +53,7 @@
 			case MediaTypeE.tmdbMovie: return "Movie";
 			case MediaTypeE.tmdbShow: return "Show";
 			case MediaTypeE.igdbGame: return "Game";
+			case MediaTypeE.malManga: return "Manga";
 			default: return "";
 		}
 	}
@@ -180,7 +183,8 @@
 						</td>
 						<td class="col-rating">
 							{#if media.watched?.rating}
-								<span class="rating-val">{toShowableRating(media.watched.rating)}</span>
+								{@const r = toShowableRating(media.watched.rating)}
+								<span class="rating-val">{Number.isInteger(r) ? r : r.toFixed(2)}</span>
 							{:else}
 								—
 							{/if}

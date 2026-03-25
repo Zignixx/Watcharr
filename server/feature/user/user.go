@@ -97,7 +97,7 @@ func (s *Service) UserGetSettings(userId uint) (entity.UserSettings, error) {
 func (s *Service) UserSearch(currentUsersId uint, q string) ([]entity.PublicUser, error) {
 	slog.Debug("user search request running", "query", q)
 	users := new([]entity.PublicUser)
-	res := s.db.Where("private = 0 AND username LIKE ? AND id != ?", "%"+q+"%", currentUsersId).Table("users").Find(&users)
+	res := s.db.Where("private = 0 AND deleted_at IS NULL AND username LIKE ? AND id != ?", "%"+q+"%", currentUsersId).Table("users").Find(&users)
 	if res.Error != nil {
 		slog.Error("user search failed", "error", res.Error)
 		return []entity.PublicUser{}, errors.New("failed to find users")
@@ -108,7 +108,7 @@ func (s *Service) UserSearch(currentUsersId uint, q string) ([]entity.PublicUser
 func (s *Service) ListPublicUsers(currentUsersId uint) ([]entity.PublicUser, error) {
 	slog.Debug("listing public users")
 	users := new([]entity.PublicUser)
-	res := s.db.Where("private = 0 AND id != ?", currentUsersId).Table("users").Preload("Avatar").Order("username ASC").Find(&users)
+	res := s.db.Where("private = 0 AND deleted_at IS NULL AND id != ?", currentUsersId).Table("users").Preload("Avatar").Order("username ASC").Find(&users)
 	if res.Error != nil {
 		slog.Error("list public users failed", "error", res.Error)
 		return []entity.PublicUser{}, errors.New("failed to list users")
@@ -131,7 +131,7 @@ func (s *Service) GetUserInfo(currentUsersId uint) (entity.PrivateUser, error) {
 func (s *Service) GetUserPublicInfo(userId uint, username string) (entity.PublicUser, error) {
 	slog.Debug("user get info request running")
 	user := new(entity.PublicUser)
-	res := s.db.Where("private = 0 AND id = ? AND LOWER(username) = LOWER(?)", userId, username).Table("users").Preload("Avatar").Take(&user)
+	res := s.db.Where("private = 0 AND deleted_at IS NULL AND id = ? AND LOWER(username) = LOWER(?)", userId, username).Table("users").Preload("Avatar").Take(&user)
 	if res.Error != nil {
 		slog.Error("public user get info failed", "error", res.Error)
 		return entity.PublicUser{}, errors.New("failed to find user")
