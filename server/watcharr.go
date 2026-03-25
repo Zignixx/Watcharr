@@ -230,7 +230,7 @@ func main() {
 	tagService := tag.NewService(db, watchedService)
 	tierlistService := tierlist.NewService(db)
 	searchService := search.NewService(db, br.Cfg, contentService, watchedService, jikanClient)
-	discoverService := discover.NewService(db, br.Cfg, contentService, followService)
+	discoverService := discover.NewService(db, br.Cfg, contentService, followService, jikanClient)
 	importService := imprt.NewService(
 		db,
 		watchedService,

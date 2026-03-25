@@ -167,9 +167,7 @@
 			<div class="pagetitle-mediatypefilter">
 				<MediaTypeFilter
 					active={discoverType}
-					disabled={false}
-					hideManga={true}
-					onChange={(nowActive) => {
+					disabled={false}				hideManga={true}					onChange={(nowActive) => {
 						// Reset discoverFilter as we change type filter
 						// to avoid going into new type filter with unsupported
 						// discoverFilter that was set in previous type.

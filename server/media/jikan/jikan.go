@@ -111,3 +111,21 @@ func (j *Jikan) MangaDetails(id int) (JikanManga, error) {
 type JikanMangaDetailsResponse struct {
 	Data JikanManga `json:"data"`
 }
+
+// TopManga returns the top/trending manga from Jikan (MAL), paginated.
+func (j *Jikan) TopManga(page int) (JikanSearchResponse, error) {
+	slog.Debug("Jikan TopManga:", "page", page)
+	var resp JikanSearchResponse
+	cacheKey := cache.CreateCacheKey("JikanTopManga", strconv.Itoa(page))
+	if cache.GetCache(MangaStore, cacheKey, &resp) {
+		slog.Debug("Jikan TopManga: Returning cache.")
+		return resp, nil
+	}
+	err := j.req("/top/manga", map[string]string{"page": strconv.Itoa(page)}, &resp)
+	if err != nil {
+		slog.Error("Jikan TopManga: request failed!", "error", err)
+		return JikanSearchResponse{}, errors.New("request failed")
+	}
+	MangaStore.Set(cacheKey, resp, time.Hour*24)
+	return resp, nil
+}

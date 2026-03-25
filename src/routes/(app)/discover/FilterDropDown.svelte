@@ -74,6 +74,8 @@
 			case SearchType.game:
 				o.push(dropDownOptions.upcoming);
 				break;
+			case SearchType.manga:
+				break;
 		}
 
 		if (supportsRecommended) {

@@ -13,6 +13,7 @@ import (
 	"github.com/sbondCo/Watcharr/config"
 	"github.com/sbondCo/Watcharr/database/entity"
 	"github.com/sbondCo/Watcharr/domain"
+	"github.com/sbondCo/Watcharr/media/jikan"
 	"github.com/sbondCo/Watcharr/media/tmdb"
 	"gorm.io/gorm"
 )
@@ -70,6 +71,7 @@ type Service struct {
 	cfg             *config.ServerConfig
 	contentProvider ContentProvider
 	followProvider  FollowProvider
+	jikan           *jikan.Jikan
 }
 
 func NewService(
@@ -77,12 +79,14 @@ func NewService(
 	cfg *config.ServerConfig,
 	contentProvider ContentProvider,
 	followProvider FollowProvider,
+	jikan *jikan.Jikan,
 ) *Service {
 	return &Service{
 		db,
 		cfg,
 		contentProvider,
 		followProvider,
+		jikan,
 	}
 }
 
@@ -106,6 +110,8 @@ func (s *Service) Discover(
 		return s.DiscoverMovie(r, meta)
 	case domain.SearchTypeGame:
 		return s.DiscoverGame(r, meta)
+	case domain.SearchTypeManga:
+		return s.DiscoverManga(r, meta)
 	}
 	return resp, nil
 }
@@ -212,6 +218,23 @@ func (s *Service) DiscoverGame(
 		err = s.discoverGameUpcoming(&resp)
 	default:
 		slog.Error("DiscoverGame: Unsupported filter.")
+		return resp, errors.New("unsupported filter")
+	}
+	return resp, err
+}
+
+// Discover manga.
+func (s *Service) DiscoverManga(
+	r domain.DiscoverRequest,
+	meta domain.DiscoverRequestMeta,
+) (domain.DiscoverResponse, error) {
+	resp := domain.DiscoverResponse{}
+	var err error
+	switch r.Filter {
+	case domain.DiscoverFilterTrending:
+		err = s.discoverMangaTrending(meta, &resp)
+	default:
+		slog.Error("DiscoverManga: Unsupported filter.")
 		return resp, errors.New("unsupported filter")
 	}
 	return resp, err
@@ -443,6 +466,30 @@ func (s *Service) discoverGameUpcoming(
 	resp.Page = 1
 	resp.TotalPages = 1
 	resp.TotalResults = int64(len(igdbRes))
+	return nil
+}
+
+func (s *Service) discoverMangaTrending(
+	meta domain.DiscoverRequestMeta,
+	resp *domain.DiscoverResponse,
+) error {
+	if s.jikan == nil {
+		return errors.New("manga provider not available")
+	}
+	jikanRes, err := s.jikan.TopManga(meta.PageParams.Page)
+	if err != nil {
+		slog.Error("discoverMangaTrending: Failed to get top manga from jikan!", "error", err)
+		return errors.New("content request failed")
+	}
+	for _, v := range jikanRes.Data {
+		resp.Results = append(
+			resp.Results,
+			v.AsMedia(),
+		)
+	}
+	resp.Page = jikanRes.Pagination.CurrentPage
+	resp.TotalPages = jikanRes.Pagination.LastVisiblePage
+	resp.TotalResults = int64(jikanRes.Pagination.Items.Total)
 	return nil
 }
 
