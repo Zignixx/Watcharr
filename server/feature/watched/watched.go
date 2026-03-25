@@ -137,7 +137,7 @@ func (s *Service) getPublicWatched(
 	// harder to just type in random ids and see someones list.. dunno
 	// if this is a thing we need but its here.. for now at least.
 	res := s.db.
-		Where("id = ? AND username = ?", userId, username).
+		Where("id = ? AND LOWER(username) = LOWER(?)", userId, username).
 		Take(&user)
 	if res.Error != nil {
 		slog.Error("getPublicWatched: Failed to get user.",

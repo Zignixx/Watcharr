@@ -14,6 +14,7 @@ import (
 type PlexLoginRequest struct {
 	AuthToken        string `json:"token" binding:"required"`
 	ClientIdentifier string `json:"clientIdentifier" binding:"required"`
+	RememberMe       bool   `json:"rememberMe"`
 }
 
 type PlexUser struct {

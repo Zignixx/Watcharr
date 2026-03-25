@@ -9,6 +9,7 @@
 	import { goto } from "$app/navigation";
 	import DropFileButton from "@/lib/DropFileButton.svelte";
 	import Spinner from "@/lib/Spinner.svelte";
+	import { getToken } from "@/lib/util/api";
 	import { notify } from "@/lib/util/notify";
 	import { store } from "@/store.svelte";
 	import { onMount } from "svelte";
@@ -689,7 +690,7 @@
 	}
 
 	onMount(() => {
-		if (!localStorage.getItem("token")) {
+		if (!getToken()) {
 			goto("/login");
 		}
 	});

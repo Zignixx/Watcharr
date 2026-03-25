@@ -59,6 +59,8 @@ func (r *Router) AddRoutes() {
 	server.GET("/users", r.GetAllUsers)
 	// Edit a user (for manage users page)
 	server.POST("/users/:id", r.UpdateManageUser)
+	// Delete a user (for manage users page)
+	server.DELETE("/users/:id", r.DeleteUser)
 }
 
 // Get server config (minus very sensitive fields, like JWT_SECRET)
@@ -169,4 +171,25 @@ func (r *Router) UpdateManageUser(c *gin.Context) {
 		return
 	}
 	c.AbortWithStatusJSON(http.StatusBadRequest, router.ErrorResponse{Error: err.Error()})
+}
+
+// Delete a user (for manage users page)
+func (r *Router) DeleteUser(c *gin.Context) {
+	currentUserId := c.GetUint("userId")
+	userId, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		slog.Error("DeleteUser: failed to parse id as a uint", "error", err)
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "failed to parse id"})
+		return
+	}
+	if currentUserId == uint(userId) {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "you cannot delete yourself"})
+		return
+	}
+	err = r.userManageProvider.Delete(uint(userId))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusOK)
 }

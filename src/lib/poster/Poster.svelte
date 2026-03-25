@@ -14,6 +14,7 @@
 	import { goto } from "$app/navigation";
 	import { baseURL, removeWatched, updateWatched } from "../util/api";
 	import { notify } from "../util/notify";
+	import axios from "axios";
 	import { onMount } from "svelte";
 	import { store } from "@/store.svelte";
 	import PosterStatus from "./PosterStatus.svelte";
@@ -24,6 +25,7 @@
 	import WatchedDeleteModal from "../watched/WatchedDeleteModal.svelte";
 	import PosterContextMenu from "./PosterContextMenu.svelte";
 	import MobilePosterModal from "./MobilePosterModal.svelte";
+	import PosterGestureHUD from "./PosterGestureHUD.svelte";
 
 	interface Props {
 		media: Media;
@@ -95,6 +97,45 @@
 
 	// Mobile modal state
 	let mobileModalOpen = $state(false);
+
+	// Gesture HUD state
+	let gestureHUD: { x: number; y: number } | undefined = $state();
+	let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+	let longPressStartPos: { x: number; y: number } | undefined;
+
+	function handlePosterTouchStart(e: TouchEvent) {
+		if (disableInteraction || !meta?.id) return;
+		const touch = e.touches[0];
+		if (!touch) return;
+		longPressStartPos = { x: touch.clientX, y: touch.clientY };
+		longPressTimer = setTimeout(() => {
+			if (longPressStartPos) {
+				gestureHUD = { x: longPressStartPos.x, y: longPressStartPos.y };
+			}
+		}, 400);
+	}
+
+	function handlePosterTouchMove(e: TouchEvent) {
+		if (!longPressTimer || !longPressStartPos) return;
+		const touch = e.touches[0];
+		if (!touch) return;
+		const dx = Math.abs(touch.clientX - longPressStartPos.x);
+		const dy = Math.abs(touch.clientY - longPressStartPos.y);
+		// Cancel long press if finger moved too much (user is scrolling)
+		if (dx > 10 || dy > 10) {
+			clearTimeout(longPressTimer);
+			longPressTimer = undefined;
+			longPressStartPos = undefined;
+		}
+	}
+
+	function handlePosterTouchEnd() {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = undefined;
+		}
+		longPressStartPos = undefined;
+	}
 
 	function handleContextMenu(e: MouseEvent) {
 		if (disableInteraction || !meta?.id) return;
@@ -330,7 +371,12 @@
 		}
 	}}
 	onmouseleave={posterOnMouseLeave}
+	ontouchstart={handlePosterTouchStart}
+	ontouchmove={handlePosterTouchMove}
+	ontouchend={handlePosterTouchEnd}
+	ontouchcancel={handlePosterTouchEnd}
 	onclick={() => {
+		if (gestureHUD) return;
 		if (isTouch() && !disableInteraction && meta?.id) {
 			mobileModalOpen = true;
 		} else {
@@ -459,6 +505,61 @@
 		{ownerName}
 		onClose={() => { mobileModalOpen = false; }}
 		onWatchedUpdate={(w) => { updateWatchedVar(w); }}
+	/>
+{/if}
+
+{#if gestureHUD && meta?.id}
+	<PosterGestureHUD
+		{media}
+		{watched}
+		contentType={meta.type}
+		{poster}
+		startX={gestureHUD.x}
+		startY={gestureHUD.y}
+		onComplete={async (action) => {
+			if (action.type === "rating") {
+				handleStarClick(action.value);
+			} else if (action.type === "status") {
+				handleStatusClick(action.value);
+			} else if (action.type === "tier" && meta?.id) {
+				try {
+					// Ensure item is on watched list first
+					let w = watched;
+					if (!w) {
+						w = await updateWatched(undefined, {
+							contentId: meta.id,
+							contentType: meta.type,
+							status: "PLANNED" as WatchedStatus,
+						});
+						updateWatchedVar(w);
+					}
+					if (w) {
+						// Fetch current tier items, append this item, save
+						const resp = await axios.get("/tierlist");
+						const tiers = resp.data ?? [];
+						const tier = tiers.find((t: any) => t.id === action.tierId);
+						if (tier) {
+							const existingIds: number[] = (tier.tierItems || []).map((ti: any) => ti.watchedId ?? ti.watched?.id);
+							// Remove from any other tier first
+							const items: Record<number, number[]> = {};
+							for (const t of tiers) {
+								const ids: number[] = (t.tierItems || []).map((ti: any) => ti.watchedId ?? ti.watched?.id).filter((id: number) => id !== w!.id);
+								if (t.id === action.tierId) {
+									ids.push(w!.id);
+								}
+								items[t.id] = ids;
+							}
+							await axios.put("/tierlist/items", { items });
+							notify({ text: `Added to ${tier.name}`, type: "success" });
+						}
+					}
+				} catch (err) {
+					notify({ text: "Failed to add to tier", type: "error" });
+				}
+			}
+			gestureHUD = undefined;
+		}}
+		onCancel={() => { gestureHUD = undefined; }}
 	/>
 {/if}
 

@@ -3,14 +3,14 @@
 
 	import { goto } from "$app/navigation";
 	import type { AvailableAuthProviders } from "@/types";
-	import { noAuthAxios } from "@/lib/util/api";
+	import { noAuthAxios, getToken, setToken } from "@/lib/util/api";
 	import { onMount } from "svelte";
 	import { notify, unNotify } from "@/lib/util/notify";
 
 	let error: string = $state();
 
 	onMount(() => {
-		if (localStorage.getItem("token")) {
+		if (getToken()) {
 			goto("/");
 		}
 
@@ -43,7 +43,8 @@
 			.then((resp) => {
 				if (resp.data?.token) {
 					console.log("Received token... logging in.");
-					localStorage.setItem("token", resp.data.token);
+					// Setup creates a short-lived token; user can login with remember me after
+					setToken(resp.data.token, false);
 					goto("/");
 					notify({ id: nid, text: `Welcome ${user}!`, type: "success" });
 				}

@@ -4,7 +4,7 @@ export const csr = true;
 
 import { goto } from "$app/navigation";
 import axios from "axios";
-import { baseURL } from "@/lib/util/api";
+import { baseURL, getToken } from "@/lib/util/api";
 import { notify } from "@/lib/util/notify";
 import { clearWatcharrData } from "@/lib/logout";
 
@@ -14,7 +14,7 @@ axios.interceptors.request.use(
 			config.baseURL = baseURL;
 
 			// Only want to set auth header if requesting to our backend.
-			const token = localStorage.getItem("token");
+			const token = getToken();
 			// Don't require token check if going to auth route (login/register)
 			// or public routes accessible by guests (shared lists)
 			const isPublicRoute =

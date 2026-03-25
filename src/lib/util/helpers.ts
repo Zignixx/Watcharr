@@ -170,7 +170,7 @@ export function getOrdinalSuffix(i: number) {
 
 export function parseTokenPayload(): TokenClaims | undefined {
 	try {
-		const token = localStorage.getItem("token");
+		const token = localStorage.getItem("token") || sessionStorage.getItem("token");
 		if (!token) return;
 		return JSON.parse(atob(token.split(".")[1])) as TokenClaims;
 	} catch (err) {

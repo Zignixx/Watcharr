@@ -7,7 +7,7 @@
 	import { clearActiveFilters, store } from "@/store.svelte.js";
 	import type { Media, MediaTypeE, PublicUser, Watched, Tier } from "@/types.js";
 	import axios, { type GenericAbortSignal } from "axios";
-	import { publicAxios } from "@/lib/util/api.js";
+	import { publicAxios, getToken } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
 	import paginatedLoader, {
 		PaginatedLoaderRunFnAction,
@@ -28,7 +28,7 @@
 		};
 	});
 
-	let isLoggedIn = $derived(!!localStorage.getItem("token"));
+	let isLoggedIn = $derived(!!getToken());
 	let followBtnDisabled = $state(false);
 	let user: PublicUser | undefined = $state();
 	let activeTab: "list" | "tierlist" = $state("list");

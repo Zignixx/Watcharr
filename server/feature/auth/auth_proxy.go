@@ -59,7 +59,7 @@ func (s *TrustedHeaderService) GetTrustedHeaderAuthLogoutDetails() *TrustedHeade
 }
 
 // Login via header sso
-func (s *TrustedHeaderService) LoginTrustedHeaderAuth(user *entity.User) (AuthResponse, error) {
+func (s *TrustedHeaderService) LoginTrustedHeaderAuth(user *entity.User, rememberMe bool) (AuthResponse, error) {
 	slog.Debug("loginTrustedHeaderAuth: A user is logging in", "username_from_header", user.Username)
 	dbUser := new(entity.User)
 	res := s.db.Where("username = ? AND type = ?", user.Username, entity.PROXY_USER).Take(&dbUser)
@@ -82,7 +82,7 @@ func (s *TrustedHeaderService) LoginTrustedHeaderAuth(user *entity.User) (AuthRe
 			return AuthResponse{}, errors.New("error locating user in db")
 		}
 	}
-	token, err := s.authService.signJWT(dbUser)
+	token, err := s.authService.signJWT(dbUser, rememberMe)
 	if err != nil {
 		slog.Error("loginTrustedHeaderAuth: Failed to sign new jwt", "error", err)
 		return AuthResponse{}, errors.New("failed to get auth token")

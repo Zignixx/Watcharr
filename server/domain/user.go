@@ -28,10 +28,12 @@ type (
 	UpdateUserRequest struct {
 		Permissions *int             `json:"permissions"`
 		Type        *entity.UserType `json:"type"`
+		Username    *string          `json:"username" binding:"omitempty,min=1,max=50"`
 	}
 
 	UserManageProvider interface {
 		GetAll() ([]ManagedUser, error)
 		Manage(userId uint, ur UpdateUserRequest) error
+		Delete(userId uint) error
 	}
 )

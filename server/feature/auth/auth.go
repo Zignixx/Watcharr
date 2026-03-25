@@ -34,6 +34,12 @@ type UserRegisterRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type LoginRequest struct {
+	Username   string `json:"username" binding:"required"`
+	Password   string `json:"password" binding:"required"`
+	RememberMe bool   `json:"rememberMe"`
+}
+
 type UseAdminTokenRequest struct {
 	Token string `json:"token" binding:"required"`
 }
@@ -41,6 +47,12 @@ type UseAdminTokenRequest struct {
 type JellyfinAuth struct {
 	Username string `json:"Username"`
 	Pw       string `json:"Pw"`
+}
+
+type JellyfinLoginRequest struct {
+	Username   string `json:"username" binding:"required"`
+	Password   string `json:"password" binding:"required"`
+	RememberMe bool   `json:"rememberMe"`
 }
 
 type JellyfinAuthResponse struct {
@@ -128,7 +140,7 @@ func (s *Service) Register(ur *UserRegisterRequest, initialPerm int) (AuthRespon
 		return AuthResponse{}, errors.New("failed to get user id, try login")
 	}
 
-	token, err := s.signJWT(&user)
+	token, err := s.signJWT(&user, false)
 	if err != nil {
 		slog.Error("Registration: Failed to sign new jwt", "error", err)
 		return AuthResponse{}, errors.New("failed to get auth token")
@@ -152,16 +164,16 @@ func (s *Service) RegisterFirstUser(urr *UserRegisterRequest) (AuthResponse, err
 	return s.Register(urr, entity.PERM_ADMIN)
 }
 
-func (s *Service) Login(userL *entity.User) (AuthResponse, error) {
-	slog.Debug("A User Is Logging In", "username", userL.Username)
+func (s *Service) Login(lr *LoginRequest) (AuthResponse, error) {
+	slog.Debug("A User Is Logging In", "username", lr.Username)
 	dbUser := new(entity.User)
-	res := s.db.Where("username = ? AND (type IS NULL OR type = 0)", userL.Username).Take(&dbUser)
+	res := s.db.Where("username = ? AND (type IS NULL OR type = 0)", lr.Username).Take(&dbUser)
 	if res.Error != nil {
 		slog.Error("Failed to select user from database for login", "error", res.Error)
 		return AuthResponse{}, errors.New("User does not exist")
 	}
 
-	match, err := s.compareHash(userL.Password, dbUser.Password)
+	match, err := s.compareHash(lr.Password, dbUser.Password)
 	if err != nil {
 		slog.Error("Failed to compare pass to hash for login", "error", err)
 		return AuthResponse{}, errors.New("failed to login")
@@ -171,7 +183,7 @@ func (s *Service) Login(userL *entity.User) (AuthResponse, error) {
 		return AuthResponse{}, errors.New("incorrect details")
 	}
 
-	token, err := s.signJWT(dbUser)
+	token, err := s.signJWT(dbUser, lr.RememberMe)
 	if err != nil {
 		slog.Error("Failed to sign new jwt", "error", err)
 		return AuthResponse{}, errors.New("failed to get auth token")
@@ -179,7 +191,7 @@ func (s *Service) Login(userL *entity.User) (AuthResponse, error) {
 	return AuthResponse{Token: token}, nil
 }
 
-func (s *Service) LoginJellyfin(userL *entity.User) (AuthResponse, error) {
+func (s *Service) LoginJellyfin(lr *JellyfinLoginRequest) (AuthResponse, error) {
 	if s.cfg.JELLYFIN_HOST == "" {
 		slog.Error("Request made to login via Jellyfin, but JELLYFIN_HOST has not been configured.")
 		return AuthResponse{}, errors.New("jellyfin login not enabled")
@@ -192,7 +204,7 @@ func (s *Service) LoginJellyfin(userL *entity.User) (AuthResponse, error) {
 	}
 
 	// Marshall struct as json
-	usrJSON, err := json.Marshal(JellyfinAuth{Username: userL.Username, Pw: userL.Password})
+	usrJSON, err := json.Marshal(JellyfinAuth{Username: lr.Username, Pw: lr.Password})
 	if err != nil {
 		slog.Error("Error marshalling JellyfinAuth JSON", "error", err.Error())
 		return AuthResponse{}, errors.New("failed to marshal json")
@@ -205,7 +217,7 @@ func (s *Service) LoginJellyfin(userL *entity.User) (AuthResponse, error) {
 		return AuthResponse{}, errors.New("request failed")
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("X-Emby-Authorization", "MediaBrowser Client=\"Watcharr\", Device=\"HTTP\", DeviceId=\"WatcharrFor"+userL.Username+"\", Version=\"10.8.0\"")
+	req.Header.Add("X-Emby-Authorization", "MediaBrowser Client=\"Watcharr\", Device=\"HTTP\", DeviceId=\"WatcharrFor"+lr.Username+"\", Version=\"10.8.0\"")
 	res, err := client.Do(req)
 	if err != nil {
 		slog.Error("making request to jellyfin for auth failed", "error", err)
@@ -259,7 +271,7 @@ func (s *Service) LoginJellyfin(userL *entity.User) (AuthResponse, error) {
 		s.db.Save(&dbUser)
 	}
 
-	token, err := s.signJWT(dbUser)
+	token, err := s.signJWT(dbUser, lr.RememberMe)
 	if err != nil {
 		slog.Error("Failed to sign new (jellyfin login) jwt", "error", err)
 		return AuthResponse{}, errors.New("failed to get auth token")
@@ -328,7 +340,7 @@ func (s *Service) LoginPlex(lr *plex.PlexLoginRequest) (AuthResponse, error) {
 		}
 		s.db.Save(&dbUser.UserServices)
 	}
-	token, err := s.signJWT(dbUser)
+	token, err := s.signJWT(dbUser, lr.RememberMe)
 	if err != nil {
 		slog.Error("loginPlex: Failed to sign new jwt", "error", err)
 		return AuthResponse{}, errors.New("failed to get auth token")
@@ -378,16 +390,23 @@ func (s *Service) UseAdminToken(req *UseAdminTokenRequest, userId uint) error {
 	return nil
 }
 
-func (s *Service) signJWT(user *entity.User) (token string, err error) {
+func (s *Service) signJWT(user *entity.User, rememberMe bool) (token string, err error) {
+	now := time.Now()
+	var expiresAt time.Time
+	if rememberMe {
+		expiresAt = now.Add(365 * 24 * time.Hour) // 1 year
+	} else {
+		expiresAt = now.Add(24 * time.Hour) // 24 hours
+	}
 	// Create new jwt with claim data
 	jwt := jwt.NewWithClaims(jwt.SigningMethodHS256, entity.TokenClaims{
 		UserID:   user.ID,
 		Username: user.Username,
 		Type:     user.Type,
 		RegisteredClaims: jwt.RegisteredClaims{
-			// ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt: jwt.NewNumericDate(time.Now()),
-			Issuer:   "watcharr",
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    "watcharr",
 		},
 	})
 

@@ -131,7 +131,7 @@ func (s *Service) GetUserInfo(currentUsersId uint) (entity.PrivateUser, error) {
 func (s *Service) GetUserPublicInfo(userId uint, username string) (entity.PublicUser, error) {
 	slog.Debug("user get info request running")
 	user := new(entity.PublicUser)
-	res := s.db.Where("private = 0 AND id = ? AND username = ?", userId, username).Table("users").Preload("Avatar").Take(&user)
+	res := s.db.Where("private = 0 AND id = ? AND LOWER(username) = LOWER(?)", userId, username).Table("users").Preload("Avatar").Take(&user)
 	if res.Error != nil {
 		slog.Error("public user get info failed", "error", res.Error)
 		return entity.PublicUser{}, errors.New("failed to find user")

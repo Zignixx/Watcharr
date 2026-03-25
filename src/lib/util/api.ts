@@ -27,6 +27,36 @@ export const baseURL =
 		: "/api";
 console.log("api: baseURL constructed:", baseURL);
 
+/**
+ * Get the auth token from localStorage or sessionStorage.
+ */
+export function getToken(): string | null {
+	return localStorage.getItem("token") || sessionStorage.getItem("token");
+}
+
+/**
+ * Store the auth token. If rememberMe is true, uses localStorage
+ * (persists across browser restarts), otherwise sessionStorage
+ * (cleared when browser closes).
+ */
+export function setToken(token: string, rememberMe: boolean) {
+	if (rememberMe) {
+		localStorage.setItem("token", token);
+		sessionStorage.removeItem("token");
+	} else {
+		sessionStorage.setItem("token", token);
+		localStorage.removeItem("token");
+	}
+}
+
+/**
+ * Remove the auth token from both storages.
+ */
+export function removeToken() {
+	localStorage.removeItem("token");
+	sessionStorage.removeItem("token");
+}
+
 interface UpdateWatchedSharedOptions {
 	status?: WatchedStatus;
 	rating?: number;
@@ -338,7 +368,7 @@ export const publicAxios = axios.create({
 	baseURL: baseURL,
 });
 publicAxios.interceptors.request.use((config) => {
-	const token = localStorage.getItem("token");
+	const token = getToken();
 	if (token) {
 		config.headers.set("Authorization", token);
 	}

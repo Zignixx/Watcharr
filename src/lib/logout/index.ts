@@ -1,4 +1,5 @@
 import { clearAllStores } from "@/store.svelte";
+import { removeToken } from "@/lib/util/api";
 
 /**
  * Helper to clear local data in client for logout
@@ -9,6 +10,6 @@ import { clearAllStores } from "@/store.svelte";
  * should not be included here (eg: redirecting to /login).
  */
 export function clearWatcharrData() {
-	localStorage.removeItem("token");
+	removeToken();
 	clearAllStores();
 }

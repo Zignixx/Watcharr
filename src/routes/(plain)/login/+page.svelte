@@ -3,12 +3,13 @@
 	import { page } from "$app/state";
 	import Icon from "@/lib/Icon.svelte";
 	import { type AvailableAuthProviders } from "@/types";
-	import { noAuthAxios } from "@/lib/util/api";
+	import { noAuthAxios, getToken, setToken } from "@/lib/util/api";
 	import { onMount } from "svelte";
 	import { notify, unNotify } from "@/lib/util/notify";
 
 	let error: string | undefined = $state();
 	let login = $state(true);
+	let rememberMe = $state(false);
 	let availableProviders: string[] = $state([]);
 	let apHeader = $state(false);
 	let apPlex = $state(false);
@@ -17,7 +18,7 @@
 	let noAuto = $state(false);
 
 	onMount(() => {
-		if (localStorage.getItem("token")) {
+		if (getToken()) {
 			goto("/");
 		}
 
@@ -73,11 +74,12 @@
 			.post(`/auth${login ? `/${customAuthEP}` : "/register"}`, {
 				username: user,
 				password: pass,
+				rememberMe: login ? rememberMe : false,
 			})
 			.then((resp) => {
 				if (resp.data?.token) {
 					console.log("Received token... logging in.");
-					localStorage.setItem("token", resp.data.token);
+					setToken(resp.data.token, login ? rememberMe : false);
 					if (useEmby) {
 						localStorage.setItem("useEmby", "1");
 					} else {
@@ -115,11 +117,12 @@
 					.post("/auth/plex", {
 						token,
 						clientIdentifier: p.clientId,
+						rememberMe,
 					})
 					.then((resp) => {
 						if (resp.data?.token) {
 							console.log("Received token... logging in.");
-							localStorage.setItem("token", resp.data.token);
+							setToken(resp.data.token, rememberMe);
 							goto("/");
 							notify({ id: nid, text: `Welcome!`, type: "success" });
 						}
@@ -147,7 +150,8 @@
 			.then((resp) => {
 				if (resp.data?.token) {
 					console.log("Received token... logging in.");
-					localStorage.setItem("token", resp.data.token);
+					// Proxy/SSO always gets a long-lived token from the server
+					setToken(resp.data.token, true);
 					goto("/");
 					notify({ id: nid, text: `Welcome!`, type: "success" });
 				}
@@ -193,6 +197,11 @@
 			<input type="password" name="password" placeholder="Password" />
 
 			{#if login}
+				<label class="remember-me">
+					<input type="checkbox" bind:checked={rememberMe} />
+					<span>Remember me</span>
+				</label>
+
 				<span class="login-with" style="font-weight: bold">Login With</span>
 				<div class="login-btns">
 					<button type="submit"><span class="watcharr">W</span>Watcharr</button>
@@ -290,6 +299,24 @@
 	label {
 		align-self: flex-start;
 		font-weight: bold;
+	}
+
+	label.remember-me {
+		display: flex;
+		flex-flow: row;
+		align-items: center;
+		gap: 8px;
+		font-weight: normal;
+		font-size: 14px;
+		cursor: pointer;
+		align-self: flex-start;
+
+		input[type="checkbox"] {
+			width: 16px;
+			height: 16px;
+			cursor: pointer;
+			accent-color: $text-color;
+		}
 	}
 
 	span.login-with {

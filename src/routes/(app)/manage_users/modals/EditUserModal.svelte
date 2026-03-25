@@ -12,6 +12,7 @@
 	interface UpdateUserRequest {
 		permissions?: number;
 		type?: UserType;
+		username?: string;
 	}
 
 	interface Props {
@@ -27,39 +28,70 @@
 	// Things we have changed
 	let changedPerms = false;
 	let originalUser = structuredClone(user);
+	let newUsername = $state(user.username);
+	let confirmDelete = $state(false);
+	let deleteLoading = $state(false);
 
 	async function save() {
 		const changedType = user.type !== originalUser.type;
+		const changedUsername = newUsername !== originalUser.username;
 		// If nothing changed.. error
-		if (!changedPerms && !changedType) {
+		if (!changedPerms && !changedType && !changedUsername) {
 			error = "Nothing has been changed";
 			return;
 		}
-		if (!error) {
-			try {
-				const toUpdate: UpdateUserRequest = {};
-				if (changedPerms) {
-					toUpdate["permissions"] = user.permissions;
+		error = undefined;
+		try {
+			const toUpdate: UpdateUserRequest = {};
+			if (changedPerms) {
+				toUpdate["permissions"] = user.permissions;
+			}
+			if (changedType) {
+				toUpdate["type"] = user.type;
+			}
+			if (changedUsername) {
+				if (!newUsername || newUsername.trim().length === 0) {
+					error = "Username cannot be empty";
+					return;
 				}
-				if (changedType) {
-					toUpdate["type"] = user.type;
-				}
-				const res = await axios.post(`/server/users/${user.id}`, toUpdate);
-				if (res.status === 200) {
-					notify({
-						type: "success",
-						text: "Changes saved!",
-					});
-					onClose();
-				}
-			} catch (err: any) {
-				console.error("Failed to save user!", err);
-				error = `Failed to save`;
-				if (err?.response?.data?.error) {
-					error = err.response.data.error;
-				}
+				toUpdate["username"] = newUsername.trim();
+			}
+			const res = await axios.post(`/server/users/${user.id}`, toUpdate);
+			if (res.status === 200) {
+				notify({
+					type: "success",
+					text: "Changes saved!",
+				});
+				onClose();
+			}
+		} catch (err: any) {
+			console.error("Failed to save user!", err);
+			error = `Failed to save`;
+			if (err?.response?.data?.error) {
+				error = err.response.data.error;
 			}
 		}
+	}
+
+	async function deleteUser() {
+		deleteLoading = true;
+		error = undefined;
+		try {
+			await axios.delete(`/server/users/${user.id}`);
+			notify({
+				type: "success",
+				text: `User "${user.username}" deleted!`,
+			});
+			onClose();
+		} catch (err: any) {
+			console.error("Failed to delete user!", err);
+			error = "Failed to delete user";
+			if (err?.response?.data?.error) {
+				error = err.response.data.error;
+			}
+		}
+		deleteLoading = false;
+		confirmDelete = false;
 	}
 
 	function userTogglePermission(perm: UserPermission) {
@@ -70,7 +102,7 @@
 
 <Modal
 	title={`Edit User`}
-	desc={`Configuring ${user.username}`}
+	desc={`Configuring ${originalUser.username}`}
 	maxWidth="500px"
 	{onClose}
 >
@@ -79,6 +111,22 @@
 	{/if}
 
 	<SettingsList>
+		<h3 class="norm">Username</h3>
+
+		<Setting
+			title="Rename User"
+			desc="Change this user's username."
+			row
+		>
+			<input
+				type="text"
+				bind:value={newUsername}
+				placeholder="New username"
+				maxlength="50"
+				class="username-input"
+			/>
+		</Setting>
+
 		<h3 class="norm">Permissions</h3>
 
 		<Setting
@@ -166,6 +214,26 @@
 			{/if}
 		</Setting>
 
+		<h3 class="norm">Danger Zone</h3>
+
+		<Setting
+			title="Delete User"
+			desc="Permanently delete this user and all their data. This cannot be undone."
+			row
+		>
+			{#if !confirmDelete}
+				<button class="delete-btn" onclick={() => (confirmDelete = true)}>Delete</button>
+			{:else}
+				<div class="confirm-delete">
+					<span>Are you sure?</span>
+					<button class="delete-btn" onclick={deleteUser} disabled={deleteLoading}>
+						{deleteLoading ? "Deleting..." : "Yes, Delete"}
+					</button>
+					<button onclick={() => (confirmDelete = false)}>Cancel</button>
+				</div>
+			{/if}
+		</Setting>
+
 		<div class="btns">
 			<button onclick={() => save()}>Save</button>
 		</div>
@@ -200,5 +268,41 @@
 		text-transform: capitalize;
 		color: white;
 		margin-bottom: 15px;
+	}
+
+	.username-input {
+		padding: 8px 12px;
+		border-radius: 5px;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		background: rgba(255, 255, 255, 0.05);
+		color: inherit;
+		font-size: 14px;
+		width: 200px;
+	}
+
+	.delete-btn {
+		background-color: rgb(221, 48, 48) !important;
+		color: white;
+
+		&:hover {
+			background-color: rgb(190, 30, 30) !important;
+		}
+	}
+
+	.confirm-delete {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+
+		span {
+			font-weight: bold;
+			color: rgb(221, 48, 48);
+		}
+
+		button {
+			padding: 6px 12px;
+			font-size: 13px;
+		}
 	}
 </style>

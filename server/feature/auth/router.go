@@ -60,9 +60,9 @@ func (r *Router) AddRoutes() {
 
 // Login
 func (r *Router) Login(c *gin.Context) {
-	var user entity.User
-	if c.ShouldBindJSON(&user) == nil {
-		response, err := r.service.Login(&user)
+	var lr LoginRequest
+	if c.ShouldBindJSON(&lr) == nil {
+		response, err := r.service.Login(&lr)
 		if err != nil {
 			c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
 			return
@@ -75,9 +75,9 @@ func (r *Router) Login(c *gin.Context) {
 
 // Jellyfin login
 func (r *Router) LoginJellyfin(c *gin.Context) {
-	var user entity.User
-	if c.ShouldBindJSON(&user) == nil {
-		response, err := r.service.LoginJellyfin(&user)
+	var lr JellyfinLoginRequest
+	if c.ShouldBindJSON(&lr) == nil {
+		response, err := r.service.LoginJellyfin(&lr)
 		if err != nil {
 			c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
 			return
@@ -117,7 +117,8 @@ func (r *Router) LoginProxy(c *gin.Context) {
 		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: "authentication header missing"})
 		return
 	}
-	response, err := r.trustedHeaderService.LoginTrustedHeaderAuth(&user)
+	// Proxy/SSO users always get long-lived sessions
+	response, err := r.trustedHeaderService.LoginTrustedHeaderAuth(&user, true)
 	if err != nil {
 		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
 		return

@@ -16,6 +16,7 @@
 	import { isTouch } from "@/lib/util/helpers";
 	import { parseTokenPayload, userHasPermission } from "@/lib/util/helpers";
 	import { clearWatcharrData } from "@/lib/logout";
+	import { getToken } from "@/lib/util/api";
 	import { notify } from "@/lib/util/notify";
 	import { store, defaultSort } from "@/store.svelte";
 	import { RatingSystem, UserPermission, UserType } from "@/types";
@@ -119,10 +120,10 @@
 		);
 	}
 
-	let isLoggedIn = $state(!!localStorage.getItem("token"));
+	let isLoggedIn = $state(!!getToken());
 
 	async function getInitialData() {
-		if (localStorage.getItem("token")) {
+		if (getToken()) {
 			const [u, s, f, fo, ts] = await Promise.all([
 				axios.get("/user"),
 				axios.get("/user/settings"),
