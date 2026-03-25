@@ -333,7 +333,10 @@ shownPerc: {shownPerc}<br /> -->
 		class="rating-wrap"
 		bind:this={ratingWrapEl}
 		onpointermove={(ev) => handleMouseOver(ev)}
-		ontouchmove={(ev) => handleMouseOver(ev)}
+		ontouchmove={(ev) => {
+			ev.preventDefault();
+			handleMouseOver(ev);
+		}}
 		ontouchstart={(ev) => {
 			// Prevent `click` event from triggering.
 			// Mainly for firefox mobile, these events dont work the same
@@ -439,6 +442,9 @@ shownPerc: {shownPerc}<br /> -->
 		margin-right: auto;
 		/* For chromium on mobile, looks a lil gross */
 		-webkit-tap-highlight-color: transparent;
+		/* Prevent browser from intercepting touch for scroll/zoom,
+		   so ontouchmove fires reliably on mobile */
+		touch-action: none;
 
 		&:focus-visible {
 			+ .keyboard-tip {

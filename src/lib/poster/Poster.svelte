@@ -23,6 +23,7 @@
 	import { decode } from "blurhash";
 	import WatchedDeleteModal from "../watched/WatchedDeleteModal.svelte";
 	import PosterContextMenu from "./PosterContextMenu.svelte";
+	import MobilePosterModal from "./MobilePosterModal.svelte";
 
 	interface Props {
 		media: Media;
@@ -91,6 +92,9 @@
 
 	// Context menu state
 	let ctxMenu: { x: number; y: number } | undefined = $state();
+
+	// Mobile modal state
+	let mobileModalOpen = $state(false);
 
 	function handleContextMenu(e: MouseEvent) {
 		if (disableInteraction || !meta?.id) return;
@@ -326,7 +330,13 @@
 		}
 	}}
 	onmouseleave={posterOnMouseLeave}
-	onclick={() => (posterActive = true)}
+	onclick={() => {
+		if (isTouch() && !disableInteraction && meta?.id) {
+			mobileModalOpen = true;
+		} else {
+			posterActive = true;
+		}
+	}}
 	onkeyup={(e) => {
 		if (e.key === "Tab") {
 			e.currentTarget.scrollIntoView({ block: "center" });
@@ -434,6 +444,20 @@
 		{ownerWatched}
 		{ownerName}
 		onClose={() => { ctxMenu = undefined; }}
+		onWatchedUpdate={(w) => { updateWatchedVar(w); }}
+	/>
+{/if}
+
+{#if mobileModalOpen && meta?.id}
+	<MobilePosterModal
+		{media}
+		{watched}
+		contentId={meta.id}
+		contentType={meta.type}
+		{poster}
+		{ownerWatched}
+		{ownerName}
+		onClose={() => { mobileModalOpen = false; }}
 		onWatchedUpdate={(w) => { updateWatchedVar(w); }}
 	/>
 {/if}
