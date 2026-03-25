@@ -601,6 +601,10 @@
 
 	li.active {
 		cursor: pointer;
+
+		.type-badge {
+			opacity: 0;
+		}
 	}
 
 	li.pinned:not(.active) .container {
@@ -676,6 +680,7 @@
 			font-weight: 600;
 			pointer-events: none;
 			z-index: 1;
+			transition: opacity 150ms ease;
 		}
 
 		&.details-shown .img-loader {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Checkbox from "@/lib/Checkbox.svelte";
+	import Icon from "@/lib/Icon.svelte";
 	import Spinner from "@/lib/Spinner.svelte";
 	import { notify } from "@/lib/util/notify";
 	import type {
@@ -156,22 +157,30 @@
 						desc="Point to your {jellyfinOrEmby} server to enable related features. Don't change server after
         already using another."
 					>
-						<input
-							type="text"
-							placeholder="https://{jellyfinOrEmby.toLowerCase()}.example.com"
-							bind:value={serverConfig.JELLYFIN_HOST}
-							onblur={() => {
-								jfDisabled = true;
-								updateServerConfig(
-									"JELLYFIN_HOST",
-									serverConfig!.JELLYFIN_HOST,
-									() => {
-										jfDisabled = false;
-									},
-								);
-							}}
-							disabled={jfDisabled}
-						/>
+						<div class="input-with-save">
+							<input
+								type="text"
+								placeholder="https://{jellyfinOrEmby.toLowerCase()}.example.com"
+								bind:value={serverConfig.JELLYFIN_HOST}
+								disabled={jfDisabled}
+							/>
+							<button
+								class="save-btn"
+								disabled={jfDisabled}
+								onclick={() => {
+									jfDisabled = true;
+									updateServerConfig(
+										"JELLYFIN_HOST",
+										serverConfig!.JELLYFIN_HOST,
+										() => {
+											jfDisabled = false;
+										},
+									);
+								}}
+							>
+								<Icon i="check" wh={16} />
+							</button>
+						</div>
 					</Setting>
 					<Setting
 						title="Use Emby"
@@ -195,23 +204,31 @@
 						desc="Point to your Plex server to enable related features. Don't change server after
         already using another."
 					>
-						<input
-							type="text"
-							placeholder="https://plex.example.com"
-							bind:value={serverConfig.PLEX_HOST}
-							onblur={() => {
-								plexHostDisabled = true;
-								updateServerConfig(
-									"PLEX_HOST",
-									serverConfig!.PLEX_HOST,
-									(rData) => {
-										plexHostDisabled = false;
-										serverConfig!.PLEX_MACHINE_ID = rData?.PLEX_MACHINE_ID;
-									},
-								);
-							}}
-							disabled={plexHostDisabled}
-						/>
+						<div class="input-with-save">
+							<input
+								type="text"
+								placeholder="https://plex.example.com"
+								bind:value={serverConfig.PLEX_HOST}
+								disabled={plexHostDisabled}
+							/>
+							<button
+								class="save-btn"
+								disabled={plexHostDisabled}
+								onclick={() => {
+									plexHostDisabled = true;
+									updateServerConfig(
+										"PLEX_HOST",
+										serverConfig!.PLEX_HOST,
+										(rData) => {
+											plexHostDisabled = false;
+											serverConfig!.PLEX_MACHINE_ID = rData?.PLEX_MACHINE_ID;
+										},
+									);
+								}}
+							>
+								<Icon i="check" wh={16} />
+							</button>
+						</div>
 						{#if serverConfig.PLEX_MACHINE_ID}
 							<span style="font-size: 10px"
 								>Machine Id: {serverConfig.PLEX_MACHINE_ID}</span
@@ -219,18 +236,26 @@
 						{/if}
 					</Setting>
 					<Setting title="TMDB Key" desc="Provide your own TMDB API Key">
-						<input
-							type="password"
-							placeholder="TMDB Key"
-							bind:value={serverConfig.TMDB_KEY}
-							onblur={() => {
-								tmdbkDisabled = true;
-								updateServerConfig("TMDB_KEY", serverConfig!.TMDB_KEY, () => {
-									tmdbkDisabled = false;
-								});
-							}}
-							disabled={tmdbkDisabled}
-						/>
+						<div class="input-with-save">
+							<input
+								type="password"
+								placeholder="TMDB Key"
+								bind:value={serverConfig.TMDB_KEY}
+								disabled={tmdbkDisabled}
+							/>
+							<button
+								class="save-btn"
+								disabled={tmdbkDisabled}
+								onclick={() => {
+									tmdbkDisabled = true;
+									updateServerConfig("TMDB_KEY", serverConfig!.TMDB_KEY, () => {
+										tmdbkDisabled = false;
+									});
+								}}
+							>
+								<Icon i="check" wh={16} />
+							</button>
+						</div>
 					</Setting>
 					<Setting
 						title="Signup"
@@ -456,6 +481,43 @@
 			@media screen and (max-width: 440px) {
 				width: 100%;
 				min-width: unset;
+			}
+		}
+
+		.input-with-save {
+			display: flex;
+			gap: 6px;
+			align-items: center;
+
+			input {
+				flex: 1;
+				min-width: 0;
+				width: 100%;
+			}
+
+			.save-btn {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				width: 32px;
+				height: 32px;
+				padding: 0;
+				border-radius: 5px;
+				background: rgba(255, 255, 255, 0.1);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				color: white;
+				cursor: pointer;
+				flex-shrink: 0;
+				transition: background 150ms ease;
+
+				&:hover:not(:disabled) {
+					background: rgba(255, 255, 255, 0.2);
+				}
+
+				&:disabled {
+					opacity: 0.5;
+					cursor: not-allowed;
+				}
 			}
 		}
 	}
