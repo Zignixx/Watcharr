@@ -342,6 +342,11 @@
 					<FollowingMenu close={() => (followingMenuShown = false)} />
 				</div>
 			{/if}
+
+			<a href="/users" class="nav-item" class:active={page.url?.pathname === "/users"} use:tooltip={{ text: "Users", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="people" wh={20} />
+				<span>Users</span>
+			</a>
 		</nav>
 
 		<div class="sidebar-footer">

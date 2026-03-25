@@ -105,6 +105,17 @@ func (s *Service) UserSearch(currentUsersId uint, q string) ([]entity.PublicUser
 	return *users, nil
 }
 
+func (s *Service) ListPublicUsers(currentUsersId uint) ([]entity.PublicUser, error) {
+	slog.Debug("listing public users")
+	users := new([]entity.PublicUser)
+	res := s.db.Where("private = 0 AND id != ?", currentUsersId).Table("users").Preload("Avatar").Order("username ASC").Find(&users)
+	if res.Error != nil {
+		slog.Error("list public users failed", "error", res.Error)
+		return []entity.PublicUser{}, errors.New("failed to list users")
+	}
+	return *users, nil
+}
+
 func (s *Service) GetUserInfo(currentUsersId uint) (entity.PrivateUser, error) {
 	slog.Debug("user get info request running")
 	user := new(entity.PrivateUser)

@@ -45,6 +45,7 @@ interface Store {
 	wlDetailedView: WLDetailedViewOption[];
 	tags: Tag[];
 	viewMode: ViewMode;
+	gridColumns: number;
 }
 
 /**
@@ -66,6 +67,7 @@ const _store: Store = $state({
 	wlDetailedView: [],
 	tags: [],
 	viewMode: "grid" as ViewMode,
+	gridColumns: 3,
 });
 
 const updateSortAndFiltersForQueryParams = () => {
@@ -222,6 +224,14 @@ export const store = {
 		localStorage.setItem("viewMode", v);
 		console.debug("Store: Saved viewMode:", v);
 	},
+	get gridColumns() {
+		return _store.gridColumns;
+	},
+	set gridColumns(v: number) {
+		_store.gridColumns = v;
+		localStorage.setItem("gridColumns", String(v));
+		console.debug("Store: Saved gridColumns:", v);
+	},
 };
 
 /**
@@ -241,6 +251,7 @@ export const clearAllStores = () => {
 	store.wlDetailedView = [];
 	store.tags = [];
 	store.viewMode = "grid";
+	store.gridColumns = 3;
 	clearActiveFilters();
 };
 
@@ -314,6 +325,15 @@ function rehydrateStore() {
 	if (vm === "grid" || vm === "list") {
 		_store.viewMode = vm;
 		console.debug("rehydrateStore: Restored viewMode:", vm);
+	}
+	// Restore gridColumns
+	const gc = localStorage.getItem("gridColumns");
+	if (gc) {
+		const num = parseInt(gc);
+		if (num >= 1 && num <= 7) {
+			_store.gridColumns = num;
+			console.debug("rehydrateStore: Restored gridColumns:", num);
+		}
 	}
 	console.info("rehydrateStore: Done.");
 }

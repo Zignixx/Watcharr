@@ -41,6 +41,8 @@ func (r *Router) AddRoutes() {
 	u.GET("/settings", r.GetSettings)
 	// Search users
 	u.GET("/search", r.GetSearchUsers)
+	// List public users
+	u.GET("/list", r.GetPublicUsersList)
 	// Update bio
 	u.POST("/bio", r.UpdateBio)
 	// Upload avatar
@@ -97,6 +99,17 @@ func (r *Router) GetSearchUsers(c *gin.Context) {
 	response, err := r.service.UserSearch(userId, query)
 	if err != nil {
 		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// List public users
+func (r *Router) GetPublicUsersList(c *gin.Context) {
+	userId := c.MustGet("userId").(uint)
+	response, err := r.service.ListPublicUsers(userId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, response)

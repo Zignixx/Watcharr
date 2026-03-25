@@ -114,11 +114,17 @@
 		align-items: center;
 		font-size: 14px;
 		width: 160px;
+		max-width: calc(100% - 8px);
 		color: white;
 		background-color: $poster-extra-detail-bg-color;
 		border-radius: 10px;
 		transition: opacity 100ms ease-out;
 		pointer-events: none !important;
+
+		@media screen and (max-width: 600px) {
+			font-size: clamp(8px, 2.5vw, 14px);
+			border-radius: 6px;
+		}
 
 		& > div {
 			padding: 8px 3px;

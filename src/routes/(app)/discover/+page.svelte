@@ -23,9 +23,12 @@
 	import PersonPoster from "@/lib/poster/PersonPoster.svelte";
 	import FilterDropDown from "./FilterDropDown.svelte";
 
+	import Icon from "@/lib/Icon.svelte";
+
 	const scroll = infScroll({ callback: onScrollToBottom });
 	const dataLoader = paginatedLoader<Media, undefined>(load);
 
+	let fromCache = $state(false);
 	let discoverFilter: string = $state(DiscoverFilter.trending);
 	let discoverType: SearchType | undefined = $derived.by(() => {
 		const t = page.url.searchParams.get("type");
@@ -105,6 +108,9 @@
 			params: nextLoadParams,
 			signal,
 		});
+		if (isRecommended && nextLoadParams.page === 1) {
+			fromCache = r.data.fromCache === true;
+		}
 		scroll.dataLoaded();
 		return r;
 	}
@@ -184,6 +190,27 @@
 		</PageTitle>
 
 		<PosterList>
+			{#if isRecommended && fromCache && dataLoader.state.data?.length > 0}
+				<div class="cache-banner">
+					<span>Cached results</span>
+					<button
+						class="plain cache-refresh-btn"
+						onclick={async () => {
+							const params: Record<string, string> = {};
+							if (discoverType) params.type = discoverType;
+							if (discoverFilter.startsWith("recommended:")) {
+								params.sourceUserId = discoverFilter.split(":")[1];
+							}
+							await axios.delete("/discover/recommend-cache", { params });
+							fromCache = false;
+							dataLoader.runFn(PaginatedLoaderRunFnAction.Reset);
+						}}
+					>
+						<Icon i="refresh" wh={14} />
+						<span>Refresh</span>
+					</button>
+				</div>
+			{/if}
 			{#if dataLoader.state.data?.length > 0}
 				{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
 					{#if w.type === MediaTypeE.tmdbPerson}
@@ -291,5 +318,37 @@
 	.rec-progress-text {
 		font-size: 0.85rem;
 		color: $text-color-accent;
+	}
+
+	.cache-banner {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		padding: 8px 14px;
+		border-radius: 8px;
+		background: rgba(128, 128, 128, 0.08);
+		border: 1px solid rgba(128, 128, 128, 0.15);
+		font-size: 13px;
+		opacity: 0.8;
+		margin-bottom: 4px;
+	}
+
+	.cache-refresh-btn {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		padding: 4px 10px;
+		border-radius: 6px;
+		font-size: 12px;
+		cursor: pointer;
+		color: $text-color;
+		background: rgba(128, 128, 128, 0.1);
+		border: 1px solid rgba(128, 128, 128, 0.2);
+		transition: background 150ms ease;
+
+		&:hover {
+			background: rgba(128, 128, 128, 0.2);
+		}
 	}
 </style>

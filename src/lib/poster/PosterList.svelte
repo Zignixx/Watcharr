@@ -3,10 +3,11 @@
 
 	interface Props {
 		type?: "wrapped" | "vertical";
+		columns?: number;
 		children?: import("svelte").Snippet;
 	}
 
-	let { type = "wrapped", children }: Props = $props();
+	let { type = "wrapped", columns, children }: Props = $props();
 
 	let ulEl: HTMLUListElement = $state();
 
@@ -18,7 +19,7 @@
 </script>
 
 <div>
-	<ul bind:this={ulEl}>
+	<ul bind:this={ulEl} style={columns ? `--grid-columns: ${columns}` : undefined}>
 		{@render children?.()}
 	</ul>
 </div>
@@ -60,7 +61,7 @@
 		@media screen and (max-width: 600px) {
 			&:global(.wrapped) {
 				display: grid;
-				grid-template-columns: repeat(3, 1fr);
+				grid-template-columns: repeat(var(--grid-columns, 3), 1fr);
 				gap: 8px;
 				margin: 12px 0;
 				padding: 0 8px;
@@ -76,7 +77,7 @@
 		}
 
 		@media screen and (max-width: 350px) {
-			&:global(.wrapped) {
+			&:global(.wrapped:not([style*="--grid-columns"])) {
 				grid-template-columns: repeat(2, 1fr);
 			}
 		}

@@ -46,6 +46,8 @@ type DiscoverRequestMeta struct {
 
 type DiscoverResponse struct {
 	util.PaginationResponse[Media, util.None]
+	// Whether the results were served from cache.
+	FromCache bool `json:"fromCache,omitempty"`
 }
 
 // A followed user eligible as a recommendation source.

@@ -43,6 +43,8 @@ func (r *Router) AddRoutes() {
 	discover.GET("/recommend-sources", r.GetRecommendSources)
 	// Get current recommendation computation progress
 	discover.GET("/recommend-progress", r.GetRecommendProgress)
+	// Clear recommendation cache for current user
+	discover.DELETE("/recommend-cache", r.ClearRecommendCache)
 }
 
 // NOTE: The handler functions use `copier` to copy values from the response
@@ -115,6 +117,27 @@ func (r *Router) GetRecommendSources(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sources)
+}
+
+func (r *Router) ClearRecommendCache(c *gin.Context) {
+	userId := c.MustGet("userId").(uint)
+	contentType := c.Query("type")
+	sourceUserIdStr := c.Query("sourceUserId")
+	var sourceUserId uint
+	if sourceUserIdStr != "" {
+		if v, err := fmt.Sscanf(sourceUserIdStr, "%d", &sourceUserId); err != nil || v != 1 {
+			sourceUserId = 0
+		}
+	}
+	ct := ""
+	switch contentType {
+	case "movie":
+		ct = "movie"
+	case "show":
+		ct = "tv"
+	}
+	r.service.ClearRecommendCache(userId, sourceUserId, ct)
+	c.JSON(http.StatusOK, gin.H{"cleared": true})
 }
 
 func (r *Router) GetRecommendProgress(c *gin.Context) {

@@ -893,6 +893,195 @@
 		dragOverIndex = null;
 	}
 
+	// === Touch drag support for mobile ===
+	let touchDragEl: HTMLElement | null = null;
+	let touchOffsetX = 0;
+	let touchOffsetY = 0;
+	let touchOverUntiered = false;
+
+	function onTouchDragStart(
+		e: TouchEvent,
+		watchedId: number,
+		sourceTierId: number | null,
+		sourceIndex: number,
+	) {
+		if (!editMode) return;
+		const touch = e.touches[0];
+		const target = e.currentTarget as HTMLElement;
+
+		dragItem = { watchedId, sourceTierId, sourceIndex };
+		touchOverUntiered = false;
+
+		// Create visual clone
+		const clone = target.cloneNode(true) as HTMLElement;
+		clone.style.cssText = `
+			position: fixed;
+			z-index: 9999;
+			pointer-events: none;
+			opacity: 0.85;
+			width: ${target.offsetWidth}px;
+			transform: scale(1.08);
+		`;
+
+		const rect = target.getBoundingClientRect();
+		touchOffsetX = touch.clientX - rect.left;
+		touchOffsetY = touch.clientY - rect.top;
+		clone.style.left = (touch.clientX - touchOffsetX) + 'px';
+		clone.style.top = (touch.clientY - touchOffsetY) + 'px';
+
+		document.body.appendChild(clone);
+		touchDragEl = clone;
+
+		document.addEventListener('touchmove', handleTouchMove, { passive: false });
+		document.addEventListener('touchend', handleTouchEnd);
+		document.addEventListener('touchcancel', handleTouchEnd);
+
+		e.preventDefault();
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (!dragItem || !touchDragEl) return;
+		e.preventDefault();
+
+		const touch = e.touches[0];
+		touchDragEl.style.left = (touch.clientX - touchOffsetX) + 'px';
+		touchDragEl.style.top = (touch.clientY - touchOffsetY) + 'px';
+
+		// Find element under finger (hide clone temporarily)
+		touchDragEl.style.display = 'none';
+		const elUnder = document.elementFromPoint(touch.clientX, touch.clientY);
+		touchDragEl.style.display = '';
+
+		if (!elUnder) return;
+
+		const tierContainer = elUnder.closest('[data-tier-id]') as HTMLElement;
+		const untieredEl = elUnder.closest('.untiered-items') || elUnder.closest('.untiered-section');
+
+		if (tierContainer) {
+			const tierId = parseInt(tierContainer.dataset.tierId!);
+			const tierData = tiers.find((t) => t.id === tierId);
+			if (tierData) {
+				touchOverUntiered = false;
+				const items = tierData.tierItems || [];
+				const rect = tierContainer.getBoundingClientRect();
+				const pad = 8;
+				const gap = 6;
+				const isMobile = window.innerWidth <= 600;
+				const itemW = isMobile ? 50 : 68;
+				const slotW = itemW + gap;
+				const itemH = isMobile ? 87 : 120;
+
+				const mx = touch.clientX - rect.left - pad;
+				const my = touch.clientY - rect.top - pad;
+				const innerW = rect.width - pad * 2;
+				const cols = Math.max(1, Math.floor((innerW + gap) / slotW));
+				const col = Math.max(0, Math.floor((mx + gap / 2) / slotW));
+				const row = Math.max(0, Math.floor((my + gap / 2) / itemH));
+
+				let dataIdx = Math.min(row * cols + col, items.length);
+				dataIdx = Math.max(0, dataIdx);
+
+				dragOverTierId = tierId;
+				dragOverIndex = dataIdx;
+			}
+		} else if (untieredEl) {
+			touchOverUntiered = true;
+			dragOverTierId = null;
+			dragOverIndex = null;
+			if (!overlayExpanded) overlayExpanded = true;
+		} else {
+			touchOverUntiered = false;
+			dragOverTierId = null;
+			dragOverIndex = null;
+		}
+	}
+
+	function handleTouchEnd() {
+		document.removeEventListener('touchmove', handleTouchMove);
+		document.removeEventListener('touchend', handleTouchEnd);
+		document.removeEventListener('touchcancel', handleTouchEnd);
+
+		if (dragItem) {
+			if (dragOverTierId !== null && dragOverIndex !== null) {
+				// Drop into a tier
+				const { watchedId, sourceTierId, sourceIndex } = dragItem;
+				let insertIndex = dragOverIndex;
+
+				if (sourceTierId === dragOverTierId && sourceIndex < insertIndex) {
+					insertIndex--;
+				}
+
+				let watchedData: any;
+				if (sourceTierId === null) {
+					watchedData = untieredWatched.find((w) => getWatchedId(w) === watchedId);
+				} else {
+					const srcTier = tiers.find((t) => t.id === sourceTierId);
+					const srcItem = srcTier?.tierItems?.find(
+						(item) => getWatchedId(item) === watchedId,
+					);
+					watchedData = srcItem?.watched || srcItem;
+				}
+
+				if (sourceTierId === null) {
+					untieredWatched = untieredWatched.filter(
+						(w) => getWatchedId(w) !== watchedId,
+					);
+				} else {
+					const srcTier = tiers.find((t) => t.id === sourceTierId);
+					if (srcTier?.tierItems) {
+						srcTier.tierItems = srcTier.tierItems.filter(
+							(item) => getWatchedId(item) !== watchedId,
+						);
+					}
+				}
+
+				const targetTier = tiers.find((t) => t.id === dragOverTierId);
+				if (targetTier) {
+					if (!targetTier.tierItems) targetTier.tierItems = [];
+					targetTier.tierItems.splice(insertIndex, 0, {
+						watchedId,
+						tierId: dragOverTierId!,
+						position: insertIndex,
+						watched: watchedData,
+					});
+					targetTier.tierItems = targetTier.tierItems.map((item, i) => ({
+						...item,
+						position: i,
+					}));
+				}
+
+				tiers = [...tiers];
+			} else if (touchOverUntiered && dragItem.sourceTierId !== null) {
+				// Drop to untiered
+				const { watchedId, sourceTierId } = dragItem;
+				const srcTier = tiers.find((t) => t.id === sourceTierId);
+				if (srcTier?.tierItems) {
+					const removed = srcTier.tierItems.find(
+						(item) => getWatchedId(item) === watchedId,
+					);
+					srcTier.tierItems = srcTier.tierItems.filter(
+						(item) => getWatchedId(item) !== watchedId,
+					);
+					if (removed) {
+						const wd = removed.watched || findWatchedData(watchedId);
+						if (wd) untieredWatched = [...untieredWatched, wd];
+					}
+				}
+				tiers = [...tiers];
+			}
+		}
+
+		// Cleanup
+		if (touchDragEl) {
+			touchDragEl.remove();
+			touchDragEl = null;
+		}
+		dragItem = null;
+		dragOverTierId = null;
+		dragOverIndex = null;
+		touchOverUntiered = false;
+	}
+
 	// Store all watched data for lookup during drag/drop
 	let allWatchedMap: Map<number, any> = $derived.by(() => {
 		const map = new Map();
@@ -1036,7 +1225,7 @@
 	<title>Tierlist</title>
 </svelte:head>
 
-<div class="tierlist-page">
+<div class="tierlist-page" class:edit-mode={editMode}>
 	<div class="tierlist-header">
 		<h2>Tierlist</h2>
 		<div class="tierlist-actions">
@@ -1081,7 +1270,7 @@
 				>
 					<div
 						class="tier-label"
-						style="background-color: {tier.color}; color: {tier.textColor};"
+						style="background-color: {tier.color}; color: {tier.textColor}; --tier-name-len: {tier.name.length};"
 					>
 						{#if editMode}
 							<div class="tier-move-actions">
@@ -1127,6 +1316,7 @@
 					</div>
 					<div
 						class="tier-items"
+						data-tier-id={tier.id}
 						ondragover={(e) => onDragOverContainer(e, tier.id, tier.tierItems || [])}
 						ondrop={(e) => {
 							e.preventDefault();
@@ -1149,6 +1339,8 @@
 									ondragstart={(e) =>
 										onDragStart(e, getWatchedId(item), tier.id, idx)}
 									ondragend={onDragEnd}
+									ontouchstart={(e) =>
+										onTouchDragStart(e, getWatchedId(item), tier.id, idx)}
 									title={title}
 								>
 									<div class="tier-item-poster">
@@ -1221,6 +1413,8 @@
 									ondragstart={(e) =>
 										onDragStart(e, getWatchedId(w), null, idx)}
 									ondragend={onDragEnd}
+									ontouchstart={(e) =>
+										onTouchDragStart(e, getWatchedId(w), null, idx)}
 									title={title}
 								>
 									<div class="tier-item-poster">
@@ -1602,17 +1796,13 @@
 		gap: 4px;
 		letter-spacing: -0.5px;
 		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-
-		@media screen and (max-width: 600px) {
-			min-width: 56px;
-			width: 56px;
-			font-size: 20px;
-			padding: 5px 4px;
-		}
 	}
 
 	.tier-name {
 		line-height: 1;
+		word-break: break-all;
+		overflow: hidden;
+		max-width: 100%;
 	}
 
 	.tier-move-actions {
@@ -2314,6 +2504,110 @@
 			display: flex;
 			gap: 4px;
 			flex-wrap: wrap;
+		}
+	}
+
+	/* Touch drag: prevent scroll on items in edit mode */
+	.tierlist-page.edit-mode .tier-item {
+		touch-action: none;
+	}
+
+	/* Mobile: compact header buttons + tier layout */
+	@media screen and (max-width: 600px) {
+		.tierlist-page {
+			padding: 12px 8px 280px;
+		}
+
+		.tierlist-header {
+			flex-wrap: wrap;
+			gap: 8px;
+
+			h2 {
+				font-size: 20px;
+			}
+		}
+
+		.tierlist-actions {
+			flex-wrap: wrap;
+			gap: 4px;
+		}
+
+		.btn-edit,
+		.btn-add,
+		.btn-save {
+			padding: 6px 10px;
+			font-size: 11px;
+			border-radius: 8px;
+		}
+
+		.tier-label {
+			min-width: 36px;
+			width: 36px;
+			padding: 3px 1px;
+			/* Scale font: 1 char=16px, longer names shrink down to 9px */
+			font-size: clamp(9px, calc(36px / var(--tier-name-len, 1) * 1.2), 16px);
+		}
+
+		.tier-move-actions {
+			gap: 0;
+		}
+
+		.tier-btn {
+			padding: 2px;
+		}
+
+		.tier-label-actions {
+			gap: 1px;
+		}
+
+		.tier-items {
+			padding: 4px;
+			gap: 4px;
+			min-height: 60px;
+		}
+
+		.tier-item {
+			width: 44px;
+		}
+
+		.tier-item-poster {
+			height: 65px;
+		}
+
+		.drop-placeholder {
+			width: 44px;
+			height: 78px;
+		}
+
+		.tier-item-title {
+			font-size: 7px;
+		}
+
+		.untiered-header {
+			padding: 8px 10px;
+			gap: 6px;
+			flex-wrap: wrap;
+		}
+
+		.untiered-filters {
+			flex-wrap: wrap;
+			gap: 3px 4px;
+		}
+
+		.filter-chip {
+			padding: 2px 8px;
+			font-size: 10px;
+			flex: 0 0 auto;
+		}
+
+		.untiered-items {
+			padding: 8px 10px 12px;
+			gap: 4px;
+			max-height: 180px;
+		}
+
+		.untiered-section h3 {
+			font-size: 12px;
 		}
 	}
 </style>

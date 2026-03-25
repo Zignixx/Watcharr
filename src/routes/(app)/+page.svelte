@@ -126,7 +126,17 @@
 		</div>
 	{/if}
 {:else}
-	<PosterList>
+	<div class="grid-controls">
+		<input
+			type="range"
+			min="1"
+			max="7"
+			bind:value={store.gridColumns}
+			class="grid-slider"
+		/>
+		<span class="grid-slider-label">{store.gridColumns}</span>
+	</div>
+	<PosterList columns={store.gridColumns}>
 		{#if dataLoader.state.data?.length > 0}
 			{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
 				{#if w}
@@ -211,6 +221,33 @@
 			padding-left: 20px;
 			padding-right: 20px;
 			margin-top: 15px;
+		}
+	}
+
+	.grid-controls {
+		display: none;
+	}
+
+	@media screen and (max-width: 600px) {
+		.grid-controls {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 8px 16px 0;
+			justify-content: flex-end;
+		}
+
+		.grid-slider {
+			width: 80px;
+			accent-color: var(--accent-color, #888);
+			cursor: pointer;
+		}
+
+		.grid-slider-label {
+			font-size: 12px;
+			opacity: 0.6;
+			min-width: 14px;
+			text-align: center;
 		}
 	}
 </style>

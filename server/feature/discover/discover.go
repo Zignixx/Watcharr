@@ -58,6 +58,7 @@ type ContentProvider interface {
 	PopularPeople(pageNum int) (tmdb.TMDBPopularPeople, error)
 	MovieRecommendations(tmdbId int, pageNum int) (tmdb.TMDBMovieSimilar, error)
 	ShowRecommendations(tmdbId int, pageNum int) (tmdb.TMDBShowSimilar, error)
+	FlushRecommendationCache()
 }
 
 type FollowProvider interface {
@@ -471,7 +472,8 @@ func (s *Service) discoverRecommended(
 	var allResults []domain.Media
 	if cached, found := recCache.Get(cacheKey); found {
 		allResults = cached.([]domain.Media)
-		slog.Debug("discoverRecommended: Serving from cache", "user", meta.UserID, "contentType", contentType, "total", len(allResults))
+		resp.FromCache = true
+		slog.Info("discoverRecommended: Serving from cache", "cacheKey", cacheKey, "total", len(allResults))
 	} else {
 		// Compute recommendations from scratch
 		progKey := recProgressKey(meta.UserID, sourceUserID, contentType)
@@ -731,6 +733,17 @@ func (s *Service) GetRecommendProgress(userID uint, sourceUserID uint, contentTy
 		return *p.(*RecProgress)
 	}
 	return RecProgress{}
+}
+
+// ClearRecommendCache removes the cached recommendations for a user.
+func (s *Service) ClearRecommendCache(userID uint, sourceUserID uint, contentType string) {
+	if sourceUserID == 0 {
+		sourceUserID = userID
+	}
+	cacheKey := fmt.Sprintf("recommendations_%d_%d_%s", userID, sourceUserID, contentType)
+	found := recCache.Delete(cacheKey)
+	s.contentProvider.FlushRecommendationCache()
+	slog.Info("ClearRecommendCache", "cacheKey", cacheKey, "found", found)
 }
 
 // GetRecommendSources returns followed users who have at least 1 non-dropped watched entry.

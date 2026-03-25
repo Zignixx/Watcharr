@@ -681,6 +681,12 @@ func (s *Service) ShowRecommendations(tmdbId int, pageNum int) (tmdb.TMDBShowSim
 	return *resp, nil
 }
 
+// FlushRecommendationCache clears all cached TMDB recommendation responses.
+func (s *Service) FlushRecommendationCache() {
+	ContentStore.Flush()
+	slog.Info("FlushRecommendationCache: ContentStore flushed")
+}
+
 func (s *Service) Regions() (tmdb.TMDBRegions, error) {
 	resp := new(tmdb.TMDBRegions)
 	err := s.tmdb.Request("/watch/providers/regions", map[string]string{}, &resp)
