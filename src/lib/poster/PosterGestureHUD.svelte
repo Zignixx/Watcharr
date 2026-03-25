@@ -67,7 +67,9 @@
 	let currentX = $state(startX);
 	let currentY = $state(startY);
 	let confirmed = $state(false);
+	let inCancelZone = $state(false);
 	let hudEl: HTMLDivElement | undefined = $state();
+	let cancelZoneEl: HTMLDivElement | undefined = $state();
 
 	// Tierlist state
 	let tiers: Tier[] = $state([]);
@@ -139,6 +141,12 @@
 			}
 		}
 
+		// Check if touch is in cancel zone
+		if (cancelZoneEl) {
+			const rect = cancelZoneEl.getBoundingClientRect();
+			inCancelZone = currentY >= rect.top;
+		}
+
 		if (axis === "vertical") {
 			const cfg = ratingConfig;
 			if (isThumbs) {
@@ -177,6 +185,11 @@
 	}
 
 	function handleTouchEnd() {
+		if (inCancelZone) {
+			onCancel();
+			return;
+		}
+
 		const dx = Math.abs(currentX - startX);
 		const dy = Math.abs(currentY - startY);
 
@@ -373,6 +386,12 @@
 				<div class="ghud-status-hint">← swipe →</div>
 			</div>
 		{/if}
+	</div>
+
+	<!-- Cancel zone -->
+	<div class="ghud-cancel-zone" class:active={inCancelZone} bind:this={cancelZoneEl}>
+		<Icon i="x" wh={20} />
+		<span>Cancel</span>
 	</div>
 </div>
 
@@ -736,5 +755,32 @@
 		font-size: 12px;
 		color: rgba(255, 255, 255, 0.3);
 		letter-spacing: 1px;
+	}
+
+	// --- CANCEL ZONE ---
+
+	.ghud-cancel-zone {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		padding: 20px;
+		color: rgba(255, 255, 255, 0.35);
+		fill: rgba(255, 255, 255, 0.35);
+		font-size: 14px;
+		font-weight: 600;
+		letter-spacing: 0.5px;
+		transition: all 150ms ease;
+
+		&.active {
+			color: rgb(244, 67, 54);
+			fill: rgb(244, 67, 54);
+			background: rgba(244, 67, 54, 0.12);
+		}
 	}
 </style>
