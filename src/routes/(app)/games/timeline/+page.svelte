@@ -33,6 +33,22 @@
 	let bestStreak = $state(0);
 	let usedKeys = new Set<string>();
 
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
+
 	// Drag state
 	let dragIdx = $state(-1);
 	let dragOverIdx = $state(-1);
@@ -190,13 +206,13 @@
 			streak++;
 			score += 200 + streak * 50;
 			if (streak > bestStreak) bestStreak = streak;
-			setTimeout(async () => {
+			scheduleAction(async () => {
 				round++;
 				if (!(await setupRound())) gamePhase = "gameover";
 			}, 3000);
 		} else {
 			streak = 0;
-			setTimeout(() => { gamePhase = "gameover"; }, 5000);
+			scheduleAction(() => { gamePhase = "gameover"; }, 5000);
 		}
 	}
 
@@ -233,7 +249,7 @@
 
 <svelte:head><title>Release Timeline</title></svelte:head>
 
-<div class="timeline-page">
+<div class="timeline-page" onclick={skipResult}>
 	<PageTitle title="Release Timeline" />
 
 	{#if gamePhase === "setup"}

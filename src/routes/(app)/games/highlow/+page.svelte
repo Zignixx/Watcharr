@@ -41,6 +41,22 @@
 	let score = $state(0);
 	let animating = $state(false);
 
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
+
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) {
 			if (enabledStatuses.length <= 1) return;
@@ -198,7 +214,7 @@
 			score += 100 + streak * 25;
 			if (streak > bestStreak) bestStreak = streak;
 
-			setTimeout(async () => {
+			scheduleAction(async () => {
 				// Shift right to left, pick new right
 				leftItem = rightItem;
 				leftDetail = rightDetail;
@@ -220,7 +236,7 @@
 				animating = false;
 			}, 1500);
 		} else {
-			setTimeout(() => { gamePhase = "gameover"; }, 2000);
+			scheduleAction(() => { gamePhase = "gameover"; }, 2000);
 		}
 	}
 
@@ -237,7 +253,7 @@
 	<title>Higher or Lower</title>
 </svelte:head>
 
-<div class="hl-page">
+<div class="hl-page" onclick={skipResult}>
 	<PageTitle title="Higher or Lower" />
 
 	{#if gamePhase === "setup"}

@@ -40,6 +40,22 @@
 	let usedItems = new Set<string>();
 	let posterReady = $state(false);
 
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
+
 	const BLUR_LEVELS = [10, 7, 4, 2, 0]; // progressively clearer
 
 	function toggleStatus(s: WatchedStatus) {
@@ -158,7 +174,7 @@
 			correctCount++;
 			if (streak > bestStreak) bestStreak = streak;
 
-			setTimeout(() => {
+			scheduleAction(() => {
 				round++;
 				if (!setupRound()) {
 					gamePhase = "result";
@@ -167,7 +183,7 @@
 		} else {
 			wasCorrect = false;
 			streak = 0;
-			setTimeout(() => { gamePhase = "result"; }, 2000);
+			scheduleAction(() => { gamePhase = "result"; }, 2000);
 		}
 	}
 
@@ -184,7 +200,7 @@
 	<title>Guess the Poster</title>
 </svelte:head>
 
-<div class="poster-page">
+<div class="poster-page" onclick={skipResult}>
 	<PageTitle title="Guess the Poster" />
 
 	{#if gamePhase === "setup"}

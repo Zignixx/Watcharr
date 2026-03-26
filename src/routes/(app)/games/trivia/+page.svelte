@@ -43,15 +43,31 @@
 	let showCorrect = $state(false);
 	let lifelines = $state({ fiftyFifty: true, skip: true });
 	let eliminatedOptions: number[] = $state([]);
-	let totalQuestions = 10;
+	let totalQuestions = 15;
 	let loadingQuestions = $state(false);
+
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
 
 	// Difficulty tracking
 	let difficulty = $derived(
 		currentQ < 3 ? "easy" : currentQ < 6 ? "medium" : "hard"
 	);
 
-	let prizeLabels = ["100", "200", "300", "500", "1.000", "2.000", "4.000", "8.000", "16.000", "32.000"];
+	let prizeLabels = ["100", "200", "300", "500", "1.000", "2.000", "4.000", "8.000", "16.000", "32.000", "64.000", "125.000", "250.000", "500.000", "1.000.000"];
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) {
@@ -174,30 +190,7 @@
 		return Math.floor(Math.random() * (max - min + 1)) + min;
 	}
 
-	function getYear(dateStr?: string): number | null {
-		if (!dateStr) return null;
-		const y = new Date(dateStr).getFullYear();
-		return isNaN(y) ? null : y;
-	}
-
 	// --- Question generators ---
-	function genYearQuestion(item: Media, detail: Media): Question | null {
-		const year = getYear(detail.releaseDate);
-		if (!year) return null;
-		const options = new Set<number>([year]);
-		while (options.size < 4) {
-			const offset = randomInRange(-5, 5);
-			if (offset !== 0) options.add(year + offset);
-		}
-		const sorted = [...options].sort((a, b) => a - b);
-		return {
-			text: `In which year was "${item.name}" released?`,
-			image: getPoster(item),
-			options: sorted.map(String),
-			correctIndex: sorted.indexOf(year),
-			category: "Release Year",
-		};
-	}
 
 	function genGenreQuestion(item: Media, detail: Media): Question | null {
 		if (!detail.genres || detail.genres.length === 0) return null;
@@ -259,24 +252,107 @@
 		};
 	}
 
-	function genRatingQuestion(item: Media, detail: Media): Question | null {
-		const rating = detail.rating;
-		if (!rating || rating < 1) return null;
-		// Rating is on 100 scale for TMDB, normalize to 1 decimal
-		const displayRating = Math.round(rating) / 10;
-		const options = new Set<number>([displayRating]);
+	function genEpisodeCountQuestion(item: Media, detail: Media): Question | null {
+		if (!detail.seasons || detail.seasons.length === 0) return null;
+		const total = detail.seasons.filter(s => s.number > 0).reduce((sum, s) => sum + s.episodeCount, 0);
+		if (total < 2) return null;
+		const options = new Set<number>([total]);
 		while (options.size < 4) {
-			const offset = (randomInRange(-15, 15)) / 10;
-			const val = Math.round((displayRating + offset) * 10) / 10;
-			if (val > 0 && val <= 10 && val !== displayRating) options.add(val);
+			const factor = randomInRange(50, 150) / 100;
+			const val = Math.max(1, Math.round(total * factor));
+			if (val !== total) options.add(val);
 		}
 		const sorted = [...options].sort((a, b) => a - b);
 		return {
-			text: `What is the TMDB/IGDB rating for "${item.name}"?`,
+			text: `How many episodes does "${item.name}" have in total?`,
 			image: getPoster(item),
-			options: sorted.map((v) => v.toFixed(1)),
-			correctIndex: sorted.indexOf(displayRating),
-			category: "Rating",
+			options: sorted.map(String),
+			correctIndex: sorted.indexOf(total),
+			category: "Episodes",
+		};
+	}
+
+	function genSummaryQuestion(item: Media, detail: Media, pool: Media[]): Question | null {
+		if (!detail.summary || detail.summary.length < 30) return null;
+		const name = item.name ?? "";
+		let snippet = detail.summary;
+		snippet = snippet.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '???');
+		if (snippet.length > 120) snippet = snippet.slice(0, 120).replace(/\s\S*$/, '') + '…';
+		const wrongItems = shuffle(pool.filter(m => m.name !== item.name)).slice(0, 3);
+		if (wrongItems.length < 3) return null;
+		const opts = shuffle([item.name!, ...wrongItems.map(m => m.name!)]);
+		return {
+			text: `Which item has this description?\n"${snippet}"`,
+			options: opts,
+			correctIndex: opts.indexOf(item.name!),
+			category: "Description",
+		};
+	}
+
+	function genPosterQuestion(item: Media, pool: Media[]): Question | null {
+		const poster = getPoster(item);
+		if (!poster) return null;
+		const wrongItems = shuffle(pool.filter(m => m.name !== item.name && getPoster(m))).slice(0, 3);
+		if (wrongItems.length < 3) return null;
+		const opts = shuffle([item.name!, ...wrongItems.map(m => m.name!)]);
+		return {
+			text: `What is the name of this item?`,
+			image: poster,
+			options: opts,
+			correctIndex: opts.indexOf(item.name!),
+			category: "Poster",
+		};
+	}
+
+	function genWhichHasMoreSeasonsQuestion(items: {item: Media; detail: Media}[]): Question | null {
+		const shows = items.filter(i => i.detail.seasons && i.detail.seasons.filter(s => s.number > 0).length > 0);
+		if (shows.length < 4) return null;
+		const picked = shuffle(shows).slice(0, 4);
+		const counts = picked.map(p => ({ name: p.item.name!, count: p.detail.seasons!.filter(s => s.number > 0).length }));
+		const unique = new Set(counts.map(c => c.count));
+		if (unique.size < 2) return null; // all same
+		const max = Math.max(...counts.map(c => c.count));
+		const winner = counts.find(c => c.count === max)!;
+		if (counts.filter(c => c.count === max).length > 1) return null; // tie
+		const opts = counts.map(c => c.name);
+		return {
+			text: `Which of these has the most seasons?`,
+			options: opts,
+			correctIndex: opts.indexOf(winner.name),
+			category: "Comparison",
+		};
+	}
+
+	function genWhichIsLongerQuestion(items: {item: Media; detail: Media}[]): Question | null {
+		const withRuntime = items.filter(i => i.detail.runtime && i.detail.runtime > 10);
+		if (withRuntime.length < 4) return null;
+		const picked = shuffle(withRuntime).slice(0, 4);
+		const list = picked.map(p => ({ name: p.item.name!, runtime: p.detail.runtime! }));
+		const unique = new Set(list.map(c => c.runtime));
+		if (unique.size < 2) return null;
+		const max = Math.max(...list.map(c => c.runtime));
+		const winner = list.find(c => c.runtime === max)!;
+		if (list.filter(c => c.runtime === max).length > 1) return null;
+		const opts = list.map(c => c.name);
+		return {
+			text: `Which of these has the longest runtime?`,
+			options: opts,
+			correctIndex: opts.indexOf(winner.name),
+			category: "Comparison",
+		};
+	}
+
+	function genAnimeQuestion(item: Media, pool: Media[]): Question | null {
+		if (!item.isShowAnime) return null;
+		const nonAnime = pool.filter(m => !m.isShowAnime && m.type === MediaTypeE.tmdbShow);
+		if (nonAnime.length < 3) return null;
+		const wrong = shuffle(nonAnime).slice(0, 3);
+		const opts = shuffle([item.name!, ...wrong.map(m => m.name!)]);
+		return {
+			text: `Which of these is an anime?`,
+			options: opts,
+			correctIndex: opts.indexOf(item.name!),
+			category: "Anime",
 		};
 	}
 
@@ -307,45 +383,53 @@
 		const usedItems = new Set<string>();
 		const itemPool = shuffle([...allItems]);
 
-		// Generators ordered by difficulty: easy first, hard last
-		const easyGens = [genYearQuestion, genGenreQuestion];
-		const mediumGens = [genYearQuestion, genGenreQuestion];
-		const hardGens = [genSeasonQuestion, genRuntimeQuestion];
+		// Pre-fetch details for a batch of items to enable comparison questions
+		const detailCache: {item: Media; detail: Media}[] = [];
+		for (const item of itemPool.slice(0, 30)) {
+			const detail = await fetchDetails(item);
+			if (detail) detailCache.push({item, detail});
+		}
 
-		for (const item of itemPool) {
-			if (qs.length >= totalQuestions) break;
+		// Single-item generators (no year/rating)
+		const easyGens: ((item: Media, detail: Media) => Question | null)[] = [genGenreQuestion, genPosterQuestion as any];
+		const mediumGens: ((item: Media, detail: Media) => Question | null)[] = [genSeasonQuestion, genEpisodeCountQuestion, genRuntimeQuestion];
+		const hardGens: ((item: Media, detail: Media) => Question | null)[] = [genSummaryQuestion as any];
+
+		// Generate comparison questions first (they use multiple items)
+		const comparisonGens = [genWhichHasMoreSeasonsQuestion, genWhichIsLongerQuestion];
+		const compQuestions: Question[] = [];
+		for (const gen of shuffle(comparisonGens)) {
+			const q = gen(detailCache);
+			if (q) compQuestions.push(q);
+		}
+
+		// Generate per-item questions
+		for (const {item, detail} of detailCache) {
+			if (qs.length + compQuestions.length >= totalQuestions) break;
 			if (usedItems.has(item.name ?? "")) continue;
 
 			const qIndex = qs.length;
-
-			// Easy questions (0-2)
-			if (qIndex < 3) {
-				const detail = await fetchDetails(item);
-				if (!detail) continue;
-				for (const gen of shuffle(easyGens)) {
-					const q = gen(item, detail);
-					if (q) {
-						qs.push(q);
-						usedItems.add(item.name ?? "");
-						break;
-					}
-				}
-				continue;
-			}
-
-			// Fetch details for medium/hard questions
-			const detail = await fetchDetails(item);
-			if (!detail) continue;
-
 			let generators: ((item: Media, detail: Media) => Question | null)[];
-			if (qIndex < 6) {
-				generators = shuffle(mediumGens);
+
+			if (qIndex < 4) {
+				generators = shuffle([...easyGens]);
+			} else if (qIndex < 9) {
+				generators = shuffle([...mediumGens]);
 			} else {
-				generators = shuffle(hardGens);
+				generators = shuffle([...hardGens]);
 			}
 
 			for (const gen of generators) {
-				const q = gen(item, detail);
+				let q: Question | null = null;
+				if (gen === genSummaryQuestion as any) {
+					q = genSummaryQuestion(item, detail, allItems);
+				} else if (gen === genPosterQuestion as any) {
+					q = genPosterQuestion(item, allItems);
+				} else if (gen === genAnimeQuestion as any) {
+					q = genAnimeQuestion(item, allItems);
+				} else {
+					q = gen(item, detail);
+				}
 				if (q) {
 					qs.push(q);
 					usedItems.add(item.name ?? "");
@@ -353,10 +437,18 @@
 				}
 			}
 
-			// Fallback: try any generator
+			// Fallback: try all generators
 			if (!usedItems.has(item.name ?? "")) {
-				for (const gen of [...mediumGens, ...hardGens]) {
-					const q = gen(item, detail);
+				const allGens = [...easyGens, ...mediumGens, ...hardGens];
+				for (const gen of allGens) {
+					let q: Question | null = null;
+					if (gen === genSummaryQuestion as any) {
+						q = genSummaryQuestion(item, detail, allItems);
+					} else if (gen === genPosterQuestion as any) {
+						q = genPosterQuestion(item, allItems);
+					} else {
+						q = gen(item, detail);
+					}
 					if (q) {
 						qs.push(q);
 						usedItems.add(item.name ?? "");
@@ -366,8 +458,32 @@
 			}
 		}
 
-		questions = qs;
-		totalQuestions = qs.length;
+		// Try anime questions
+		if (qs.length + compQuestions.length < totalQuestions) {
+			for (const item of itemPool) {
+				if (qs.length + compQuestions.length >= totalQuestions) break;
+				if (usedItems.has(item.name ?? "")) continue;
+				const q = genAnimeQuestion(item, allItems);
+				if (q) {
+					qs.push(q);
+					usedItems.add(item.name ?? "");
+				}
+			}
+		}
+
+		// Insert comparison questions at medium difficulty positions
+		const finalQs: Question[] = [];
+		let compIdx = 0;
+		for (let i = 0; i < qs.length; i++) {
+			finalQs.push(qs[i]);
+			if ((i === 4 || i === 7) && compIdx < compQuestions.length) {
+				finalQs.push(compQuestions[compIdx++]);
+			}
+		}
+		while (compIdx < compQuestions.length) finalQs.push(compQuestions[compIdx++]);
+
+		questions = finalQs;
+		totalQuestions = finalQs.length;
 		loadingQuestions = false;
 	}
 
@@ -411,7 +527,7 @@
 			streak = 0;
 		}
 
-		setTimeout(() => {
+		scheduleAction(() => {
 			if (currentQ + 1 >= questions.length) {
 				gamePhase = "result";
 			} else {
@@ -471,7 +587,7 @@
 	<title>Trivia Quiz</title>
 </svelte:head>
 
-<div class="trivia-page">
+<div class="trivia-page" onclick={skipResult}>
 	<PageTitle title="Trivia Quiz" />
 
 	{#if gamePhase === "setup"}

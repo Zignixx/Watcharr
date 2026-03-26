@@ -1,7 +1,7 @@
 package domain
 
 type GameScoreSaveRequest struct {
-	Game       string `json:"game" binding:"required,oneof=trivia highlow poster emoji timeline oddone episodes epcount"`
+	Game       string `json:"game" binding:"required,oneof=trivia highlow poster emoji timeline episodes epcount"`
 	Score      int    `json:"score" binding:"min=0"`
 	BestStreak int    `json:"bestStreak" binding:"min=0"`
 }

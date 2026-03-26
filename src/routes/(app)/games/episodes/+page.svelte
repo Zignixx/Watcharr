@@ -35,6 +35,22 @@
 	let bestStreak = $state(0);
 	let usedKeys = new Set<string>();
 
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
+
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) { if (enabledStatuses.length <= 1) return; enabledStatuses = enabledStatuses.filter((x) => x !== s); }
 		else { enabledStatuses = [...enabledStatuses, s]; }
@@ -176,14 +192,14 @@
 			streak++;
 			score += 100 + streak * 25;
 			if (streak > bestStreak) bestStreak = streak;
-			setTimeout(async () => {
+			scheduleAction(async () => {
 				round++;
 				if (!(await setupRound())) gamePhase = "gameover";
 			}, 3000);
 		} else {
 			wasCorrect = false;
 			streak = 0;
-			setTimeout(() => { gamePhase = "gameover"; }, 5000);
+			scheduleAction(() => { gamePhase = "gameover"; }, 5000);
 		}
 	}
 
@@ -198,7 +214,7 @@
 
 <svelte:head><title>Name That Show</title></svelte:head>
 
-<div class="episodes-page">
+<div class="episodes-page" onclick={skipResult}>
 	<PageTitle title="Name That Show" />
 
 	{#if gamePhase === "setup"}

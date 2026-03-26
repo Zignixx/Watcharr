@@ -42,6 +42,22 @@
 	let bestStreak = $state(0);
 	let usedItems = new Set<string>();
 
+	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingAction: (() => void) | null = null;
+	let skipReadyAt = 0;
+	function scheduleAction(fn: () => void, delay: number) {
+		pendingAction = fn;
+		pendingTimeout = setTimeout(() => { pendingTimeout = null; pendingAction = null; fn(); }, delay);
+		skipReadyAt = Date.now() + 300;
+	}
+	function skipResult() {
+		if (!pendingTimeout || !pendingAction || Date.now() < skipReadyAt) return;
+		clearTimeout(pendingTimeout);
+		const action = pendingAction;
+		pendingTimeout = null; pendingAction = null;
+		action();
+	}
+
 	// Derived: which words are visible? Even-indexed words up to revealedCount are revealed.
 	let revealableIndices = $derived(words.map((_, i) => i).filter((i) => i % 2 === 0));
 	let visibleSet = $derived(new Set(revealableIndices.slice(0, revealedCount)));
@@ -72,7 +88,7 @@
 		wasCorrect = false;
 		streak = 0;
 		revealedCount = revealableIndices.length + words.length; // reveal all
-		setTimeout(() => { gamePhase = "gameover"; }, 5000);
+		scheduleAction(() => { gamePhase = "gameover"; }, 5000);
 	}
 
 	function toggleStatus(s: WatchedStatus) {
@@ -193,14 +209,14 @@
 			const timeBonus = Math.round(timeLeft * 10); // up to 100 bonus for speed
 			score += 100 + streak * 25 + timeBonus;
 			if (streak > bestStreak) bestStreak = streak;
-			setTimeout(async () => {
+			scheduleAction(async () => {
 				round++;
 				if (!(await setupRound())) gamePhase = "gameover";
 			}, 3000);
 		} else {
 			wasCorrect = false;
 			streak = 0;
-			setTimeout(() => { gamePhase = "gameover"; }, 5000);
+			scheduleAction(() => { gamePhase = "gameover"; }, 5000);
 		}
 	}
 
@@ -229,7 +245,7 @@
 
 <svelte:head><title>Plot Twist</title></svelte:head>
 
-<div class="emoji-page">
+<div class="emoji-page" onclick={skipResult}>
 	<PageTitle title="Plot Twist" />
 
 	{#if gamePhase === "setup"}

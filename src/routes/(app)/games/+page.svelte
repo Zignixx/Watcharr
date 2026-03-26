@@ -103,22 +103,6 @@
 			<span class="game-tag">Sort Challenge</span>
 		</a>
 
-		<a href="/games/oddone" class="game-card">
-			<div class="game-icon" style="background: linear-gradient(135deg, #11998e, #38ef7d);">
-				<Icon i="search" wh={40} />
-			</div>
-			<h3>Odd One Out</h3>
-			<p>Three items share a genre, one doesn't. Can you spot the odd one?</p>
-			{#if scores.oddone}
-				<div class="score-row">
-					<span class="score-badge">🏆 {scores.oddone.highScore.toLocaleString()}</span>
-					<span class="score-badge">🔥 {scores.oddone.bestStreak}</span>
-					<span class="score-badge">🎮 {scores.oddone.timesPlayed}x</span>
-				</div>
-			{/if}
-			<span class="game-tag">Genre Detective</span>
-		</a>
-
 		<a href="/games/episodes" class="game-card">
 			<div class="game-icon" style="background: linear-gradient(135deg, #ff9a9e, #fecfef);">
 				<Icon i="film" wh={40} />
