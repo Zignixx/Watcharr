@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onMount, onDestroy } from "svelte";
 	import axios from "axios";
 	import type { Media, WatchedStatus, Tier } from "@/types";
 	import { MediaTypeE } from "@/types";
@@ -9,6 +9,9 @@
 	import PageTitle from "@/lib/generic/PageTitle.svelte";
 
 	type FilterMode = "status" | "tier";
+
+	const ROUND_TIME = 10; // seconds per round
+	const REVEAL_INTERVAL = 400; // ms between word reveals
 
 	let filterMode: FilterMode = $state("status");
 	let enabledStatuses: WatchedStatus[] = $state(["PLANNED", "WATCHING", "HOLD", "FINISHED", "DROPPED"]);
@@ -22,7 +25,12 @@
 	let error = $state("");
 	let gamePhase: "setup" | "playing" | "gameover" = $state("setup");
 
-	let currentOverview = $state("");
+	let words: string[] = $state([]);
+	let revealedCount = $state(0); // how many revealable (even-index) words are shown
+	let timeLeft = $state(ROUND_TIME);
+	let timerRef: ReturnType<typeof setInterval> | null = null;
+	let revealRef: ReturnType<typeof setInterval> | null = null;
+
 	let options: Media[] = $state([]);
 	let correctIndex = $state(0);
 	let selectedAnswer: number | null = $state(null);
@@ -33,6 +41,39 @@
 	let streak = $state(0);
 	let bestStreak = $state(0);
 	let usedItems = new Set<string>();
+
+	// Derived: which words are visible? Even-indexed words up to revealedCount are revealed.
+	let revealableIndices = $derived(words.map((_, i) => i).filter((i) => i % 2 === 0));
+	let visibleSet = $derived(new Set(revealableIndices.slice(0, revealedCount)));
+
+	function clearTimers() {
+		if (timerRef) { clearInterval(timerRef); timerRef = null; }
+		if (revealRef) { clearInterval(revealRef); revealRef = null; }
+	}
+
+	function startTimers() {
+		clearTimers();
+		timeLeft = ROUND_TIME;
+		revealedCount = 0;
+		timerRef = setInterval(() => {
+			timeLeft = Math.max(0, timeLeft - 0.1);
+			if (timeLeft <= 0) { onTimeUp(); }
+		}, 100);
+		revealRef = setInterval(() => {
+			if (revealedCount < revealableIndices.length) revealedCount++;
+		}, REVEAL_INTERVAL);
+	}
+
+	function onTimeUp() {
+		if (answered) return;
+		clearTimers();
+		selectedAnswer = null;
+		answered = true;
+		wasCorrect = false;
+		streak = 0;
+		revealedCount = revealableIndices.length + words.length; // reveal all
+		setTimeout(() => { gamePhase = "gameover"; }, 5000);
+	}
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) { if (enabledStatuses.length <= 1) return; enabledStatuses = enabledStatuses.filter((x) => x !== s); }
@@ -99,12 +140,12 @@
 	}
 
 	async function setupRound(): Promise<boolean> {
+		clearTimers();
 		let pool = allItems.filter((m) => !usedItems.has(m.name ?? ""));
 		if (pool.length < 4) { usedItems.clear(); pool = [...allItems]; }
 		if (pool.length < 4) return false;
 
 		const candidates = shuffle(pool);
-		// Find one with an overview
 		for (const candidate of candidates) {
 			const detail = await fetchDetails(candidate);
 			if (!detail?.summary || detail.summary.length < 20) continue;
@@ -116,14 +157,15 @@
 			const allOpts = shuffle([candidate, ...wrongItems]);
 			options = allOpts;
 			correctIndex = allOpts.indexOf(candidate);
-			// Remove the title from overview to avoid giving it away
 			let overview = detail.summary;
 			const name = candidate.name ?? "";
 			overview = overview.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '???');
-			currentOverview = overview;
+			words = overview.split(/\s+/).filter(Boolean);
+			revealedCount = 0;
 			selectedAnswer = null;
 			answered = false;
 			wasCorrect = false;
+			startTimers();
 			return true;
 		}
 		return false;
@@ -140,13 +182,16 @@
 
 	async function selectAnswer(index: number) {
 		if (answered) return;
+		clearTimers();
 		selectedAnswer = index;
 		answered = true;
+		revealedCount = revealableIndices.length + words.length; // reveal all on answer
 
 		if (index === correctIndex) {
 			wasCorrect = true;
 			streak++;
-			score += 100 + streak * 25;
+			const timeBonus = Math.round(timeLeft * 10); // up to 100 bonus for speed
+			score += 100 + streak * 25 + timeBonus;
 			if (streak > bestStreak) bestStreak = streak;
 			setTimeout(async () => {
 				round++;
@@ -172,9 +217,11 @@
 	}
 
 	onMount(() => { fetchStatusCounts(); loadItems(); });
+	onDestroy(() => { clearTimers(); });
 
 	$effect(() => {
 		if (gamePhase === "gameover") {
+			clearTimers();
 			axios.post("/gamescore", { game: "emoji", score, bestStreak }).catch(() => {});
 		}
 	});
@@ -226,8 +273,22 @@
 			<div class="game-stat"><span class="stat-label">Streak</span><span class="stat-value">🔥 {streak}</span></div>
 		</div>
 
+		<div class="timer-bar-wrap">
+			<div class="timer-bar" style="width: {(timeLeft / ROUND_TIME) * 100}%;" class:timer-low={timeLeft <= 3}></div>
+			<span class="timer-label">{timeLeft.toFixed(1)}s</span>
+		</div>
+
 		<div class="overview-card">
-			<p class="overview-text">{currentOverview}</p>
+			<p class="overview-text">
+				{#each words as word, i}
+					{#if answered || visibleSet.has(i)}
+						<span class="word revealed">{word}</span>
+					{:else}
+						<span class="word blurred">{word}</span>
+					{/if}
+					{' '}
+				{/each}
+			</p>
 		</div>
 
 		<div class="options-grid">
@@ -245,6 +306,18 @@
 				</button>
 			{/each}
 		</div>
+
+		{#if answered}
+			<div class="round-feedback">
+				{#if wasCorrect}
+					<span class="feedback-correct">✅ Correct! +{100 + streak * 25 + Math.round(timeLeft * 10)} (⏱ +{Math.round(timeLeft * 10)} speed bonus)</span>
+				{:else if selectedAnswer !== null}
+					<span class="feedback-wrong">❌ Wrong! It was {options[correctIndex]?.name}</span>
+				{:else}
+					<span class="feedback-wrong">⏰ Time's up! It was {options[correctIndex]?.name}</span>
+				{/if}
+			</div>
+		{/if}
 
 	{:else if gamePhase === "gameover"}
 		<div class="result-card">
@@ -281,7 +354,17 @@
 	.stat-label { font-size: 11px; color: $text-color-accent; font-weight: 600; text-transform: uppercase; }
 	.stat-value { font-size: 20px; font-weight: 700; }
 	.overview-card { background: $accent-color; border-radius: 14px; padding: 20px 24px; border: 1px solid $bg-color-accent; width: 100%; }
-	.overview-text { font-size: 15px; line-height: 1.7; color: $text-color; margin: 0; font-style: italic; }
+	.overview-text { font-size: 15px; line-height: 1.8; color: $text-color; margin: 0; font-style: italic; }
+	.word { display: inline; transition: filter 300ms ease, opacity 300ms ease; }
+	.word.revealed { filter: none; opacity: 1; }
+	.word.blurred { filter: blur(5px); opacity: 0.5; user-select: none; pointer-events: none; }
+	.timer-bar-wrap { width: 100%; height: 28px; background: $accent-color; border-radius: 14px; position: relative; overflow: hidden; border: 1px solid $bg-color-accent; }
+	.timer-bar { height: 100%; background: $accent-color-hover; border-radius: 14px; transition: width 100ms linear; }
+	.timer-bar.timer-low { background: #ff6b6b; }
+	.timer-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 12px; font-weight: 700; color: $text-color; }
+	.round-feedback { text-align: center; }
+	.feedback-correct { font-size: 16px; font-weight: 700; color: #51cf66; }
+	.feedback-wrong { font-size: 16px; font-weight: 700; color: #ff6b6b; }
 	.options-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
 	.option-card { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: $accent-color; border: 2px solid $bg-color-accent; cursor: pointer; transition: all 200ms ease; text-align: left; &:hover:not(:disabled) { border-color: $accent-color-hover; transform: translateY(-2px); } &.correct { border-color: #51cf66; background: rgba(81,207,102,0.15); } &.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); } &:disabled { cursor: default; } }
 	.option-poster { width: 40px; height: 56px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
