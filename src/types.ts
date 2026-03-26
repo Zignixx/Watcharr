@@ -70,7 +70,8 @@ export type Icon =
 	| "github"
 	| "website"
 	| "tmdb"
-	| "igdb";
+	| "igdb"
+	| "dice";
 
 export type Theme = "light" | "dark" | "system";
 

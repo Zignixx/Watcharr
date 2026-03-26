@@ -281,6 +281,10 @@
 				<Icon i="compass" wh={20} />
 				<span>Discover</span>
 			</a>
+			<a href="/picker" class="nav-item" class:active={page.url?.pathname === "/picker"} use:tooltip={{ text: "Random Picker", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="dice" wh={20} />
+				<span>Picker</span>
+			</a>
 			{#if store.userSettings?.ratingSystem === RatingSystem.Tierlist}
 				<a href="/tierlist" class="nav-item" class:active={page.url?.pathname === "/tierlist"} use:tooltip={{ text: "Tierlist", pos: "right", condition: sidebarCollapsed }}>
 					<Icon i="star" wh={20} />

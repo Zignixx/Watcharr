@@ -5,7 +5,7 @@
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
-	import type { Media, MediaTypeE, PublicUser, Watched, Tier } from "@/types.js";
+	import type { Media, MediaTypeE, PublicUser, Watched, Tier, SupportedMedia } from "@/types.js";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { publicAxios, getToken } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
@@ -20,6 +20,7 @@
 	import Error from "@/lib/Error.svelte";
 	import { afterNavigate } from "$app/navigation";
 	import { baseURL } from "@/lib/util/api.js";
+	import PosterContextMenu from "@/lib/poster/PosterContextMenu.svelte";
 
 	let meta = $derived.by(() => {
 		return {
@@ -106,6 +107,68 @@
 		if (w.content) return `/${w.content.type}/${w.content.tmdbId}`;
 		if (w.game) return `/game/${w.game.igdbId}`;
 		return undefined;
+	}
+
+	// Context menu state for shared tierlist
+	let ctxMenu: { x: number; y: number; watched: Watched | undefined; ownerWatched: Watched; contentId: number; contentType: SupportedMedia; mediaName: string } | undefined = $state(undefined);
+
+	function getTierItemContentInfo(item: any): { contentId: number; contentType: SupportedMedia; mediaName: string } | undefined {
+		const w = item.watched || item;
+		if (w.content) {
+			return {
+				contentId: w.content.tmdbId,
+				contentType: w.content.type as SupportedMedia,
+				mediaName: w.content.title || "Unknown",
+			};
+		}
+		if (w.game) {
+			return {
+				contentId: w.game.igdbId,
+				contentType: "game",
+				mediaName: w.game.name || "Unknown",
+			};
+		}
+		if (w.manga) {
+			return {
+				contentId: w.manga.malId,
+				contentType: "manga",
+				mediaName: w.manga.title || "Unknown",
+			};
+		}
+		return undefined;
+	}
+
+	function getTierItemOwnerWatched(item: any): Watched | undefined {
+		if (item.watched) return item.watched;
+		if (item.id && item.status !== undefined) return item as Watched;
+		return undefined;
+	}
+
+	function getMyWatchedForTierItem(item: any): Watched | undefined {
+		const w = item.watched || item;
+		if (w.content) {
+			const type = w.content.type === "movie" ? "movie" : "tv";
+			return myWatchedMap.get(`${w.content.tmdbId}-${type}`);
+		}
+		if (w.game) {
+			return myWatchedMap.get(`${w.game.igdbId}-game`);
+		}
+		return undefined;
+	}
+
+	function handleTierCtxMenu(e: MouseEvent, item: any) {
+		if (!isLoggedIn) return;
+		e.preventDefault();
+		const info = getTierItemContentInfo(item);
+		const ownerW = getTierItemOwnerWatched(item);
+		if (!info || !ownerW) return;
+		const myW = getMyWatchedForTierItem(item);
+		ctxMenu = { x: e.clientX, y: e.clientY, watched: myW, ownerWatched: ownerW, ...info };
+	}
+
+	function handleCtxMenuUpdate(w: Watched | undefined) {
+		loadMyWatchedData();
+		ctxMenu = undefined;
 	}
 
 	// Equalize tier label widths
@@ -298,7 +361,7 @@
 								{@const poster = getTierItemPoster(item)}
 								{@const title = getTierItemTitle(item)}
 								{@const link = getTierItemLink(item)}
-								<a href={link} class="tier-item" title={title}>
+								<a href={link} class="tier-item" title={title} oncontextmenu={(e) => handleTierCtxMenu(e, item)}>
 									<div class="tier-item-poster">
 										{#if poster}
 											<img src={poster} alt={title} loading="lazy" />
@@ -388,6 +451,21 @@
 	</div>
 {/if}
 
+{/if}
+
+{#if ctxMenu}
+	<PosterContextMenu
+		x={ctxMenu.x}
+		y={ctxMenu.y}
+		watched={ctxMenu.watched}
+		contentId={ctxMenu.contentId}
+		contentType={ctxMenu.contentType}
+		mediaName={ctxMenu.mediaName}
+		onClose={() => { ctxMenu = undefined; }}
+		onWatchedUpdate={handleCtxMenuUpdate}
+		ownerWatched={ctxMenu.ownerWatched}
+		ownerName={meta.username}
+	/>
 {/if}
 
 <style lang="scss">

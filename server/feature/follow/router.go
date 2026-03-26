@@ -34,6 +34,8 @@ func (r *Router) AddRoutes() {
 	// Get follows thoughts on content
 	// TODO Rename `tmdbId` to `mediaId` to match what it is actually used as (since it works for games).
 	f.GET("/thoughts/:type/:tmdbId", r.GetFollowsThoughts)
+	// Get batch social statuses for multiple content items
+	f.POST("/statuses", r.GetBatchSocialStatuses)
 }
 
 // Get users follows // TODO extend to support optionally passing user id as route param, default to current user
@@ -90,6 +92,26 @@ func (r *Router) GetFollowsThoughts(c *gin.Context) {
 	}
 	userId := c.MustGet("userId").(uint)
 	response, err := r.service.GetFollowsThoughts(userId, t, c.Param("tmdbId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// Get batch social statuses for multiple content items
+func (r *Router) GetBatchSocialStatuses(c *gin.Context) {
+	userId := c.MustGet("userId").(uint)
+	var items []ContentKey
+	if err := c.ShouldBindJSON(&items); err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid request body"})
+		return
+	}
+	if len(items) > 200 {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "too many items (max 200)"})
+		return
+	}
+	response, err := r.service.GetBatchSocialStatuses(userId, items)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: err.Error()})
 		return

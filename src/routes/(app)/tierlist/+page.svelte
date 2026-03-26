@@ -9,6 +9,7 @@
 		Watched,
 		TierPreset,
 		WatchedStatus,
+		SupportedMedia,
 	} from "@/types";
 	import { baseURL } from "@/lib/util/api";
 	import { notify } from "@/lib/util/notify";
@@ -17,6 +18,7 @@
 	import Icon from "@/lib/Icon.svelte";
 	import Spinner from "@/lib/Spinner.svelte";
 	import Modal from "@/lib/Modal.svelte";
+	import PosterContextMenu from "@/lib/poster/PosterContextMenu.svelte";
 
 	let tiers: Tier[] = $state([]);
 	let untieredWatched: any[] = $state([]);
@@ -40,6 +42,75 @@
 	let selectedGradient: string | null = $state(null);
 	let gradientReversed = $state(false);
 	let gradientCustomTextColor: string | null = $state(null);
+
+	// Context menu state
+	let ctxMenu: { x: number; y: number; watched: Watched; contentId: number; contentType: SupportedMedia; mediaName: string } | undefined = $state(undefined);
+
+	function getItemContentInfo(item: any): { contentId: number; contentType: SupportedMedia; mediaName: string } | undefined {
+		const w = item.watched || item;
+		if (w.content) {
+			return {
+				contentId: w.content.tmdbId,
+				contentType: w.content.type as SupportedMedia,
+				mediaName: w.content.title || "Unknown",
+			};
+		}
+		if (w.game) {
+			return {
+				contentId: w.game.igdbId,
+				contentType: "game",
+				mediaName: w.game.name || "Unknown",
+			};
+		}
+		if (w.manga) {
+			return {
+				contentId: w.manga.malId,
+				contentType: "manga",
+				mediaName: w.manga.title || "Unknown",
+			};
+		}
+		return undefined;
+	}
+
+	function getItemWatched(item: any): Watched | undefined {
+		if (item.watched) return item.watched;
+		if (item.id && item.status !== undefined) return item as Watched;
+		return undefined;
+	}
+
+	function handleTierItemContextMenu(e: MouseEvent, item: any) {
+		e.preventDefault();
+		const w = getItemWatched(item);
+		const info = getItemContentInfo(item);
+		if (!w || !info) return;
+		ctxMenu = { x: e.clientX, y: e.clientY, watched: w, ...info };
+	}
+
+	function handleCtxMenuWatchedUpdate(w: Watched | undefined) {
+		// Refresh the tierlist to reflect any changes
+		if (w) {
+			// Update watched data in the allWatchedMap
+			const id = w.id;
+			for (const tier of tiers) {
+				if (tier.tierItems) {
+					for (let i = 0; i < tier.tierItems.length; i++) {
+						const item = tier.tierItems[i];
+						if (item.watched && item.watched.id === id) {
+							tier.tierItems[i] = { ...item, watched: w };
+						}
+					}
+				}
+			}
+			tiers = [...tiers];
+			untieredWatched = untieredWatched.map((uw) => {
+				if ((uw.id === id) || (uw.watched?.id === id)) {
+					return uw.watched ? { ...uw, watched: w } : w;
+				}
+				return uw;
+			});
+		}
+		ctxMenu = undefined;
+	}
 
 	// Gradient presets: arrays of HSL color stops
 	const gradientPresets: { name: string; id: string; stops: [number, number, number][] }[] = [
@@ -1341,6 +1412,7 @@
 									ondragend={onDragEnd}
 									ontouchstart={(e) =>
 										onTouchDragStart(e, getWatchedId(item), tier.id, idx)}
+									oncontextmenu={(e) => handleTierItemContextMenu(e, item)}
 									title={title}
 								>
 									<div class="tier-item-poster">
@@ -1415,6 +1487,7 @@
 									ondragend={onDragEnd}
 									ontouchstart={(e) =>
 										onTouchDragStart(e, getWatchedId(w), null, idx)}
+									oncontextmenu={(e) => handleTierItemContextMenu(e, w)}
 									title={title}
 								>
 									<div class="tier-item-poster">
@@ -1658,6 +1731,19 @@
 			</button>
 		</div>
 	</Modal>
+{/if}
+
+{#if ctxMenu}
+	<PosterContextMenu
+		x={ctxMenu.x}
+		y={ctxMenu.y}
+		watched={ctxMenu.watched}
+		contentId={ctxMenu.contentId}
+		contentType={ctxMenu.contentType}
+		mediaName={ctxMenu.mediaName}
+		onClose={() => { ctxMenu = undefined; }}
+		onWatchedUpdate={handleCtxMenuWatchedUpdate}
+	/>
 {/if}
 
 <style lang="scss">

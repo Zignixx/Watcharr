@@ -26,6 +26,7 @@
 	import PosterContextMenu from "./PosterContextMenu.svelte";
 	import MobilePosterModal from "./MobilePosterModal.svelte";
 	import PosterGestureHUD from "./PosterGestureHUD.svelte";
+	import PosterSocialBadge from "./PosterSocialBadge.svelte";
 
 	interface Props {
 		media: Media;
@@ -55,6 +56,7 @@
 		onUpdated?: (() => void) | undefined;
 		ownerWatched?: Watched;
 		ownerName?: string;
+		socialData?: { followedUser: { id: number; username: string }; status: WatchedStatus }[];
 	}
 
 	let {
@@ -73,6 +75,7 @@
 		onUpdated = undefined,
 		ownerWatched = undefined,
 		ownerName = undefined,
+		socialData = undefined,
 	}: Props = $props();
 
 	// If poster is active (scaled up)
@@ -433,6 +436,9 @@
 				}}
 			/>
 			<span class="type-badge">{meta?.type === "tv" ? "Show" : meta?.type === "movie" ? "Movie" : meta?.type === "game" ? "Game" : meta?.type === "manga" ? "Manga" : ""}</span>
+			{#if socialData?.length}
+				<PosterSocialBadge {socialData} />
+			{/if}
 		{/if}
 		{#if watched && meta && !posterActive}
 			<!-- Must be on watched list, and poster not hovered -->

@@ -3,6 +3,7 @@ package follow
 import (
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/sbondCo/Watcharr/database/entity"
@@ -175,4 +176,177 @@ func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId stri
 		ft = append(ft, FollowThoughts{FollowedUser: fu, Thoughts: v.Thoughts, Status: v.Status, Rating: v.Rating})
 	}
 	return ft, nil
+}
+
+// ContentKey is a struct for identifying content items in batch requests.
+type ContentKey struct {
+	Type string `json:"type"` // "movie", "tv", "game", "manga"
+	ID   int    `json:"id"`   // tmdbId, igdbId, or malId
+}
+
+// SocialStatus represents a followed user's status for a content item.
+type SocialStatus struct {
+	FollowedUser entity.PublicUser    `json:"followedUser"`
+	Status       entity.WatchedStatus `json:"status"`
+}
+
+// GetBatchSocialStatuses returns social status info for multiple content items at once.
+// The result maps "type_id" (e.g. "movie_123") to a slice of SocialStatus.
+func (s *Service) GetBatchSocialStatuses(userId uint, items []ContentKey) (map[string][]SocialStatus, error) {
+	result := make(map[string][]SocialStatus)
+
+	if len(items) == 0 {
+		return result, nil
+	}
+
+	// Get followed users
+	var follows []entity.Follow
+	res := s.db.Where("user_id = ?", userId).Preload("FollowedUser", "private = ?", 0).Find(&follows)
+	if res.Error != nil {
+		slog.Error("getBatchSocialStatuses: Error finding follows.", "error", res.Error)
+		return result, errors.New("failed to find follows")
+	}
+
+	var followIds []uint
+	followMap := make(map[uint]entity.User)
+	for _, v := range follows {
+		if v.FollowedUser.ID == 0 {
+			continue
+		}
+		followIds = append(followIds, v.FollowedUser.ID)
+		followMap[v.FollowedUser.ID] = v.FollowedUser
+	}
+
+	if len(followIds) == 0 {
+		return result, nil
+	}
+
+	// Group items by type for batch DB lookups
+	movieTvItems := make(map[int]string) // tmdbId -> type ("movie"/"tv")
+	var gameIDs []int
+	var mangaIDs []int
+
+	for _, item := range items {
+		switch item.Type {
+		case "movie", "tv":
+			movieTvItems[item.ID] = item.Type
+		case "game":
+			gameIDs = append(gameIDs, item.ID)
+		case "manga":
+			mangaIDs = append(mangaIDs, item.ID)
+		}
+	}
+
+	// Resolve content IDs for movie/tv
+	if len(movieTvItems) > 0 {
+		var contents []entity.Content
+		var tmdbIds []int
+		for id := range movieTvItems {
+			tmdbIds = append(tmdbIds, id)
+		}
+		s.db.Where("tmdb_id IN ?", tmdbIds).Select("id, tmdb_id, type").Find(&contents)
+
+		var contentIds []int
+		contentIdMap := make(map[int]string) // contentId -> "type_tmdbId"
+		for _, c := range contents {
+			contentIds = append(contentIds, c.ID)
+			contentIdMap[c.ID] = string(c.Type) + "_" + strconv.Itoa(c.TmdbID)
+		}
+
+		if len(contentIds) > 0 {
+			var watcheds []entity.Watched
+			s.db.Where("content_id IN ? AND user_id IN ?", contentIds, followIds).Find(&watcheds)
+			for _, w := range watcheds {
+				if w.ContentID == nil {
+					continue
+				}
+				key, ok := contentIdMap[*w.ContentID]
+				if !ok {
+					continue
+				}
+				fu, ok := followMap[w.UserID]
+				if !ok {
+					continue
+				}
+				result[key] = append(result[key], SocialStatus{
+					FollowedUser: fu.GetSafe(),
+					Status:       w.Status,
+				})
+			}
+		}
+	}
+
+	// Resolve game IDs
+	if len(gameIDs) > 0 {
+		var games []entity.Game
+		s.db.Where("igdb_id IN ?", gameIDs).Select("id, igdb_id").Find(&games)
+
+		var dbGameIds []int
+		gameIdMap := make(map[int]int) // db game id -> igdbId
+		for _, g := range games {
+			dbGameIds = append(dbGameIds, g.ID)
+			gameIdMap[g.ID] = g.IgdbID
+		}
+
+		if len(dbGameIds) > 0 {
+			var watcheds []entity.Watched
+			s.db.Where("game_id IN ? AND user_id IN ?", dbGameIds, followIds).Find(&watcheds)
+			for _, w := range watcheds {
+				if w.GameID == nil {
+					continue
+				}
+				igdbId, ok := gameIdMap[*w.GameID]
+				if !ok {
+					continue
+				}
+				fu, ok := followMap[w.UserID]
+				if !ok {
+					continue
+				}
+				key := "game_" + strconv.Itoa(igdbId)
+				result[key] = append(result[key], SocialStatus{
+					FollowedUser: fu.GetSafe(),
+					Status:       w.Status,
+				})
+			}
+		}
+	}
+
+	// Resolve manga IDs
+	if len(mangaIDs) > 0 {
+		var mangas []entity.Manga
+		s.db.Where("mal_id IN ?", mangaIDs).Select("id, mal_id").Find(&mangas)
+
+		var dbMangaIds []int
+		mangaIdMap := make(map[int]int) // db manga id -> malId
+		for _, m := range mangas {
+			dbMangaIds = append(dbMangaIds, m.ID)
+			mangaIdMap[m.ID] = m.MalID
+		}
+
+		if len(dbMangaIds) > 0 {
+			var watcheds []entity.Watched
+			s.db.Where("manga_id IN ? AND user_id IN ?", dbMangaIds, followIds).Find(&watcheds)
+			for _, w := range watcheds {
+				if w.MangaID == nil {
+					continue
+				}
+				malId, ok := mangaIdMap[*w.MangaID]
+				if !ok {
+					continue
+				}
+				fu, ok := followMap[w.UserID]
+				if !ok {
+					continue
+				}
+				key := "manga_" + strconv.Itoa(malId)
+				result[key] = append(result[key], SocialStatus{
+					FollowedUser: fu.GetSafe(),
+					Status:       w.Status,
+				})
+			}
+		}
+	}
+
+	return result, nil
 }

@@ -11,7 +11,8 @@
 	import paginatedLoader from "@/lib/util/paginatedLoader.svelte";
 	import { clearActiveFilters, store } from "@/store.svelte";
 	import { RatingSystem } from "@/types";
-	import type { Media } from "@/types";
+	import type { Media, WatchedStatus } from "@/types";
+	import { MediaTypeE, getContentTypeFromMedia } from "@/types";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { onDestroy, onMount, untrack } from "svelte";
 
@@ -65,6 +66,63 @@
 	});
 
 	let showExport = $state(false);
+
+	// Social data for followed users' statuses on content items
+	let socialMap: Record<string, { followedUser: { id: number; username: string }; status: WatchedStatus }[]> = $state({});
+
+	function getSocialKey(m: Media): string | undefined {
+		const ct = getContentTypeFromMedia(m);
+		if (!ct) return;
+		switch (m.type) {
+			case MediaTypeE.tmdbMovie: return `movie_${m.ids.tmdb}`;
+			case MediaTypeE.tmdbShow: return `tv_${m.ids.tmdb}`;
+			case MediaTypeE.igdbGame: return `game_${m.ids.igdb}`;
+			case MediaTypeE.malManga: return `manga_${m.ids.mal}`;
+		}
+	}
+
+	function getMediaIdForApi(m: Media): number | undefined {
+		switch (m.type) {
+			case MediaTypeE.tmdbMovie:
+			case MediaTypeE.tmdbShow: return m.ids.tmdb;
+			case MediaTypeE.igdbGame: return m.ids.igdb;
+			case MediaTypeE.malManga: return m.ids.mal;
+		}
+	}
+
+	async function fetchSocialData(data: Media[]) {
+		if (!store.follows?.length || !data?.length) {
+			socialMap = {};
+			return;
+		}
+		const items: { type: string; id: number }[] = [];
+		for (const m of data) {
+			const ct = getContentTypeFromMedia(m);
+			const id = getMediaIdForApi(m);
+			if (ct && id) items.push({ type: ct, id });
+		}
+		if (!items.length) {
+			socialMap = {};
+			return;
+		}
+		try {
+			const r = await axios.post("/follow/statuses", items);
+			socialMap = r.data ?? {};
+		} catch {
+			socialMap = {};
+		}
+	}
+
+	// Fetch social data when items load and PLANNED status is active
+	$effect(() => {
+		const data = dataLoader.state.data;
+		const isPlanned = store.activeFilters?.status?.includes("PLANNED");
+		if (isPlanned && data?.length > 0) {
+			untrack(() => fetchSocialData(data));
+		} else {
+			untrack(() => { socialMap = {}; });
+		}
+	});
 
 	function handleExportEvent() {
 		showExport = true;
@@ -144,6 +202,7 @@
 						bind:watched={dataLoader.state.data[i].watched}
 						media={w}
 						fluidSize={true}
+						socialData={getSocialKey(w) ? socialMap[getSocialKey(w)!] : undefined}
 					/>
 				{/if}
 			{/each}

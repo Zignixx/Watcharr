@@ -4,7 +4,7 @@
 	interface Props {
 		title: string;
 		row?: boolean;
-		children: Snippet;
+		children?: Snippet;
 	}
 
 	let { title, row = true, children }: Props = $props();
@@ -12,7 +12,7 @@
 
 <div class="results-filters-header" class:row>
 	<h2>{title}</h2>
-	{@render children()}
+	{#if children}{@render children()}{/if}
 </div>
 
 <style lang="scss">
