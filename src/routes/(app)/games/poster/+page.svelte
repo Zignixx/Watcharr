@@ -39,6 +39,7 @@
 	let streak = $state(0);
 	let bestStreak = $state(0);
 	let usedItems = new Set<string>();
+	let posterReady = $state(false);
 
 	const BLUR_LEVELS = [10, 7, 4, 2, 0]; // progressively clearer
 
@@ -125,8 +126,7 @@
 		guessesLeft = 2;
 		selectedAnswer = null;
 		answered = false;
-		wasCorrect = false;
-		return true;
+		wasCorrect = false;		posterReady = false;		return true;
 	}
 
 	async function startGame() {
@@ -225,7 +225,6 @@
 			<div class="game-stat"><span class="stat-label">Round</span><span class="stat-value">{round + 1}/{totalRounds}</span></div>
 			<div class="game-stat"><span class="stat-label">Score</span><span class="stat-value">{score.toLocaleString()}</span></div>
 			<div class="game-stat"><span class="stat-label">Streak</span><span class="stat-value">🔥 {streak}</span></div>
-			<div class="game-stat"><span class="stat-label">Guesses</span><span class="stat-value">{"❤️".repeat(guessesLeft)}{"🖤".repeat(2 - guessesLeft)}</span></div>
 		</div>
 
 		{#if currentItem}
@@ -235,7 +234,8 @@
 						class="blurred-poster"
 						src={getPoster(currentItem)}
 						alt="?"
-						style="filter: blur({blurLevel}px); transition: filter 500ms ease;"
+						style="filter: blur({blurLevel}px); opacity: {posterReady ? 1 : 0}; transition: {posterReady && answered ? 'filter 500ms ease' : 'none'};"
+						onload={() => posterReady = true}
 					/>
 				</div>
 
