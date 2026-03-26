@@ -34,7 +34,6 @@
 	let wasCorrect = $state(false);
 	let score = $state(0);
 	let round = $state(0);
-	let totalRounds = 10;
 	let correctCount = $state(0);
 	let streak = $state(0);
 	let bestStreak = $state(0);
@@ -110,7 +109,12 @@
 	}
 
 	function setupRound() {
-		const withPoster = allItems.filter((m) => getPoster(m) && !usedItems.has(m.name ?? ""));
+		let withPoster = allItems.filter((m) => getPoster(m) && !usedItems.has(m.name ?? ""));
+		// If we've used most items, reset the pool (keep going forever)
+		if (withPoster.length < 4) {
+			usedItems.clear();
+			withPoster = allItems.filter((m) => getPoster(m));
+		}
 		if (withPoster.length < 4) return false;
 		const pool = shuffle(withPoster);
 		currentItem = pool[0];
@@ -136,7 +140,6 @@
 		error = "";
 		score = 0; round = 0; correctCount = 0; streak = 0; bestStreak = 0;
 		usedItems.clear();
-		totalRounds = Math.min(10, Math.floor(withPoster.length / 2));
 		if (!setupRound()) { error = "Couldn't set up the game."; return; }
 		gamePhase = "playing";
 	}
@@ -150,21 +153,22 @@
 
 		if (index === correctIndex) {
 			wasCorrect = true;
-			score += 100;
-			correctCount++;
 			streak++;
+			score += 100 + streak * 25;
+			correctCount++;
 			if (streak > bestStreak) bestStreak = streak;
+
+			setTimeout(() => {
+				round++;
+				if (!setupRound()) {
+					gamePhase = "result";
+				}
+			}, 2000);
 		} else {
 			wasCorrect = false;
 			streak = 0;
+			setTimeout(() => { gamePhase = "result"; }, 2000);
 		}
-
-		setTimeout(() => {
-			round++;
-			if (round >= totalRounds || !setupRound()) {
-				gamePhase = "result";
-			}
-		}, 2000);
 	}
 
 	onMount(() => { fetchStatusCounts(); loadItems(); });
@@ -222,7 +226,7 @@
 
 	{:else if gamePhase === "playing"}
 		<div class="game-header">
-			<div class="game-stat"><span class="stat-label">Round</span><span class="stat-value">{round + 1}/{totalRounds}</span></div>
+			<div class="game-stat"><span class="stat-label">Round</span><span class="stat-value">{round + 1}</span></div>
 			<div class="game-stat"><span class="stat-label">Score</span><span class="stat-value">{score.toLocaleString()}</span></div>
 			<div class="game-stat"><span class="stat-label">Streak</span><span class="stat-value">🔥 {streak}</span></div>
 		</div>
@@ -265,13 +269,12 @@
 		{/if}
 
 	{:else if gamePhase === "result"}
-		{@const pct = totalRounds > 0 ? Math.round((correctCount / totalRounds) * 100) : 0}
 		<div class="result-card">
-			<div class="result-emoji">{pct >= 90 ? "🏆" : pct >= 70 ? "🌟" : pct >= 50 ? "👍" : pct >= 30 ? "🤔" : "💀"}</div>
-			<h2>Game Complete!</h2>
+			<div class="result-emoji">{bestStreak >= 10 ? "🏆" : bestStreak >= 5 ? "🌟" : bestStreak >= 3 ? "👍" : "💀"}</div>
+			<h2>Game Over!</h2>
 			<div class="result-stats">
 				<div class="result-stat"><span class="result-stat-value">{score.toLocaleString()}</span><span class="result-stat-label">Total Score</span></div>
-				<div class="result-stat"><span class="result-stat-value">{correctCount}/{totalRounds}</span><span class="result-stat-label">Correct</span></div>
+				<div class="result-stat"><span class="result-stat-value">{correctCount} Rounds</span><span class="result-stat-label">Survived</span></div>
 				<div class="result-stat"><span class="result-stat-value">🔥 {bestStreak}</span><span class="result-stat-label">Best Streak</span></div>
 			</div>
 			<div class="result-actions">
