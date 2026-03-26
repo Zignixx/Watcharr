@@ -32,27 +32,95 @@
 		}
 	}
 
-	// --- Audio ---
+	// --- Audio (overlapping tick on every tile boundary) ---
 	let audioCtx: AudioContext | undefined;
+	let rollBuffer: AudioBuffer | undefined;
 
-	function ensureAudioCtx() {
-		if (!audioCtx) audioCtx = new AudioContext();
-		if (audioCtx.state === "suspended") audioCtx.resume();
-		return audioCtx;
+	async function initAudio() {
+		if (audioCtx) return;
+		audioCtx = new AudioContext();
+		try {
+			const resp = await fetch("/Roll.mp3");
+			const buf = await resp.arrayBuffer();
+			rollBuffer = await audioCtx.decodeAudioData(buf);
+		} catch {
+			// audio won't work, but don't block the spinner
+		}
 	}
 
-	function playClick(pitch = 1800, vol = 0.15, duration = 0.04) {
-		const ctx = ensureAudioCtx();
-		const osc = ctx.createOscillator();
-		const gain = ctx.createGain();
-		osc.connect(gain);
-		gain.connect(ctx.destination);
-		osc.frequency.value = pitch;
-		osc.type = "square";
-		gain.gain.setValueAtTime(vol, ctx.currentTime);
-		gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-		osc.start();
-		osc.stop(ctx.currentTime + duration);
+	function playTick() {
+		if (!audioCtx || !rollBuffer) return;
+		const src = audioCtx.createBufferSource();
+		src.buffer = rollBuffer;
+		const gain = audioCtx.createGain();
+		gain.gain.value = 0.1;
+		src.connect(gain);
+		gain.connect(audioCtx.destination);
+		src.start();
+	}
+
+	// --- RAF tracking state ---
+	let crateStripEl: HTMLDivElement | undefined = $state();
+	let crateRafId = 0;
+	let lastCrateSlot = -1;
+
+	let wheelSvgEl: SVGSVGElement | undefined = $state();
+	let wheelRafId = 0;
+	let lastWheelSlice = -1;
+
+	function trackCrateSound(itemW: number) {
+		if (!crateStripEl) return;
+		const style = getComputedStyle(crateStripEl);
+		const matrix = new DOMMatrix(style.transform);
+		const currentX = matrix.m41; // translateX value
+		const containerW = crateStripEl.parentElement?.clientWidth ?? 600;
+		const centerX = containerW / 2;
+		const slotIndex = Math.floor((-currentX + centerX) / itemW);
+		if (slotIndex !== lastCrateSlot && lastCrateSlot !== -1) {
+			playTick();
+		}
+		lastCrateSlot = slotIndex;
+		crateRafId = requestAnimationFrame(() => trackCrateSound(itemW));
+	}
+
+	function trackWheelSound(sliceAngle: number) {
+		if (!wheelSvgEl) return;
+		const style = getComputedStyle(wheelSvgEl);
+		const matrix = new DOMMatrix(style.transform);
+		const angle = Math.atan2(matrix.m21, matrix.m11) * (180 / Math.PI);
+		const normAngle = ((angle % 360) + 360) % 360;
+		const sliceIndex = Math.floor(normAngle / sliceAngle);
+		if (sliceIndex !== lastWheelSlice && lastWheelSlice !== -1) {
+			playTick();
+		}
+		lastWheelSlice = sliceIndex;
+		wheelRafId = requestAnimationFrame(() => trackWheelSound(sliceAngle));
+	}
+
+	function stopTracking() {
+		if (crateRafId) { cancelAnimationFrame(crateRafId); crateRafId = 0; }
+		if (wheelRafId) { cancelAnimationFrame(wheelRafId); wheelRafId = 0; }
+		lastCrateSlot = -1;
+		lastWheelSlice = -1;
+	}
+
+	// --- Status counts ---
+	let statusCounts: Record<string, number> = $state({});
+
+	async function fetchStatusCounts() {
+		const statuses: WatchedStatus[] = ["PLANNED", "WATCHING", "HOLD"];
+		const counts: Record<string, number> = {};
+		await Promise.all(
+			statuses.map(async (s) => {
+				try {
+					const r = await axios.get("/watched", { params: { status: s, limit: 1, page: 1 } });
+					counts[s] = r.data?.totalResults ?? 0;
+				} catch {
+					counts[s] = 0;
+				}
+			}),
+		);
+		statusCounts = counts;
 	}
 
 	// --- Crate mode state ---
@@ -60,14 +128,10 @@
 	let crateOffset = $state(0);
 	let crateTransition = $state("none");
 	let crateContainerEl: HTMLDivElement | undefined = $state();
-	let crateStripEl: HTMLDivElement | undefined = $state();
-	let crateRafId = 0;
 
 	// --- Wheel mode state ---
 	let wheelRotation = $state(0);
 	let wheelTransition = $state("none");
-	let wheelSvgEl: SVGSVGElement | undefined = $state();
-	let wheelRafId = 0;
 
 	function getPoster(m: Media): string {
 		if (m.poster?.path) return `${baseURL}/${m.poster.path}`;
@@ -127,6 +191,8 @@
 		showResult = false;
 		winner = undefined;
 
+		initAudio();
+
 		const winnerIndex = Math.floor(Math.random() * items.length);
 		winner = items[winnerIndex];
 
@@ -164,33 +230,16 @@
 				const targetPos = targetIndex * ITEM_W - containerW / 2 + ITEM_W / 2;
 				const subOffset = (Math.random() - 0.5) * 60;
 				crateOffset = -(targetPos + subOffset);
-				crateTransition = "transform 5s cubic-bezier(0.15, 0.85, 0.2, 1)";
+				crateTransition = "transform 10s cubic-bezier(0.15, 0.85, 0.2, 1)";
 
-				// Sound: track item boundaries crossing the center indicator
-				let lastSlotIndex = -1;
-				cancelAnimationFrame(crateRafId);
-
-				function trackCrateSound() {
-					if (!crateStripEl) return;
-					const style = getComputedStyle(crateStripEl);
-					const matrix = new DOMMatrix(style.transform);
-					const currentX = matrix.m41; // translateX value
-					const centerX = containerW / 2;
-					// Which item slot is under the center indicator
-					const slotIndex = Math.floor((-currentX + centerX) / ITEM_W);
-					if (slotIndex !== lastSlotIndex && lastSlotIndex !== -1) {
-						playClick(1600 + Math.random() * 400, 0.12);
-					}
-					lastSlotIndex = slotIndex;
-					crateRafId = requestAnimationFrame(trackCrateSound);
-				}
-				crateRafId = requestAnimationFrame(trackCrateSound);
+				lastCrateSlot = -1;
+				crateRafId = requestAnimationFrame(() => trackCrateSound(ITEM_W));
 
 				setTimeout(() => {
-					cancelAnimationFrame(crateRafId);
+					stopTracking();
 					spinning = false;
 					showResult = true;
-				}, 5200);
+				}, 10200);
 			});
 		});
 	}
@@ -208,34 +257,16 @@
 		requestAnimationFrame(() => {
 			requestAnimationFrame(() => {
 				wheelRotation = finalRotation;
-				wheelTransition = "transform 5s cubic-bezier(0.15, 0.85, 0.2, 1)";
+				wheelTransition = "transform 10s cubic-bezier(0.15, 0.85, 0.2, 1)";
 
-				// Sound: track slice boundaries passing the pointer (top = 0deg)
-				let lastSliceIndex = -1;
-				cancelAnimationFrame(wheelRafId);
-
-				function trackWheelSound() {
-					if (!wheelSvgEl) return;
-					const style = getComputedStyle(wheelSvgEl);
-					const matrix = new DOMMatrix(style.transform);
-					// Extract rotation angle from matrix
-					const angle = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI);
-					// Normalize to positive degrees
-					const normalizedAngle = ((angle % 360) + 360) % 360;
-					const sliceIndex = Math.floor(normalizedAngle / sliceAngle);
-					if (sliceIndex !== lastSliceIndex && lastSliceIndex !== -1) {
-						playClick(1400 + Math.random() * 300, 0.1);
-					}
-					lastSliceIndex = sliceIndex;
-					wheelRafId = requestAnimationFrame(trackWheelSound);
-				}
-				wheelRafId = requestAnimationFrame(trackWheelSound);
+				lastWheelSlice = -1;
+				wheelRafId = requestAnimationFrame(() => trackWheelSound(sliceAngle));
 
 				setTimeout(() => {
-					cancelAnimationFrame(wheelRafId);
+					stopTracking();
 					spinning = false;
 					showResult = true;
-				}, 5200);
+				}, 10200);
 			});
 		});
 	}
@@ -262,9 +293,9 @@
 	];
 
 	onMount(() => {
+		fetchStatusCounts();
 		return () => {
-			cancelAnimationFrame(crateRafId);
-			cancelAnimationFrame(wheelRafId);
+			stopTracking();
 			audioCtx?.close();
 		};
 	});
@@ -285,7 +316,7 @@
 				class:active={enabledStatuses.includes(s as WatchedStatus)}
 				onclick={() => toggleStatus(s as WatchedStatus)}
 			>
-				{label}
+				{label}{statusCounts[s] != null ? ` (${statusCounts[s]})` : ""}
 			</button>
 		{/each}
 	</div>
@@ -324,8 +355,8 @@
 				<div class="crate-indicator"></div>
 				<div class="crate-container" bind:this={crateContainerEl}>
 					<div
-						bind:this={crateStripEl}
 						class="crate-strip"
+						bind:this={crateStripEl}
 						style="transform: translateX({crateOffset}px); transition: {crateTransition};"
 					>
 						{#each crateItems.length > 0 ? crateItems : items as item, i}
@@ -349,9 +380,9 @@
 			<div class="wheel-wrapper">
 				<div class="wheel-pointer">▼</div>
 				<svg
-					bind:this={wheelSvgEl}
 					viewBox="0 0 400 400"
 					class="wheel-svg"
+					bind:this={wheelSvgEl}
 					style="transform: rotate({wheelRotation}deg); transition: {wheelTransition};"
 				>
 					{#each items as item, i}
