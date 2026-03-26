@@ -285,6 +285,10 @@
 				<Icon i="dice" wh={20} />
 				<span>Picker</span>
 			</a>
+			<a href="/games" class="nav-item" class:active={page.url?.pathname?.startsWith("/games")} use:tooltip={{ text: "Mini Games", pos: "right", condition: sidebarCollapsed }}>
+				<Icon i="gamepad" wh={20} />
+				<span>Games</span>
+			</a>
 			{#if store.userSettings?.ratingSystem === RatingSystem.Tierlist}
 				<a href="/tierlist" class="nav-item" class:active={page.url?.pathname === "/tierlist"} use:tooltip={{ text: "Tierlist", pos: "right", condition: sidebarCollapsed }}>
 					<Icon i="star" wh={20} />

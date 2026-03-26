@@ -33,6 +33,7 @@ import (
 	"github.com/sbondCo/Watcharr/feature/feature"
 	"github.com/sbondCo/Watcharr/feature/follow"
 	"github.com/sbondCo/Watcharr/feature/game"
+	"github.com/sbondCo/Watcharr/feature/gamescore"
 	"github.com/sbondCo/Watcharr/feature/imprt"
 	"github.com/sbondCo/Watcharr/feature/jellyfin"
 	"github.com/sbondCo/Watcharr/feature/job"
@@ -262,6 +263,8 @@ func main() {
 	tag.NewRouter(br, tagService).AddRoutes()
 	tierlist.NewRouter(br, tierlistService).AddRoutes()
 	game.NewRouter(br, gameService, watchedService).AddRoutes()
+	gameScoreService := gamescore.NewService(db)
+	gamescore.NewRouter(br, gameScoreService).AddRoutes()
 	manga.NewRouter(br, mangaService, watchedService).AddRoutes()
 	search.NewRouter(br, searchService, watchedService).AddRoutes()
 	discover.NewRouter(br, discoverService, watchedService).AddRoutes()

@@ -39,6 +39,7 @@ func New() (*gorm.DB, error) {
 		&entity.TierItem{},
 		&entity.TierPreset{},
 		&entity.TierPresetEntry{},
+		&entity.GameScore{},
 	)
 	if err != nil {
 		return nil, err

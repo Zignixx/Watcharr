@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import axios from "axios";
-	import type { Media, WatchedStatus } from "@/types";
+	import type { Media, WatchedStatus, Tier } from "@/types";
 	import { MediaTypeE } from "@/types";
 	import { baseURL } from "@/lib/util/api";
 	import { goto } from "$app/navigation";
@@ -11,6 +11,7 @@
 	import PageTitle from "@/lib/generic/PageTitle.svelte";
 
 	type PickerMode = "crate" | "wheel";
+	type FilterMode = "status" | "tier";
 
 	let items: Media[] = $state([]);
 	let loading = $state(true);
@@ -20,8 +21,46 @@
 	let winner: Media | undefined = $state(undefined);
 	let showResult = $state(false);
 
+	// Filter mode
+	let filterMode: FilterMode = $state("status");
+
 	// Status filters
 	let enabledStatuses: WatchedStatus[] = $state(["PLANNED", "WATCHING", "HOLD"]);
+
+	// Tierlist filters
+	let tiers: Tier[] = $state([]);
+	let enabledTierIds: number[] = $state([]);
+	let tiersLoaded = $state(false);
+
+	async function loadTiers() {
+		if (tiersLoaded) return;
+		try {
+			const r = await axios.get("/tierlist");
+			tiers = r.data || [];
+			tiersLoaded = true;
+			if (tiers.length > 0) {
+				enabledTierIds = tiers.map((t) => t.id);
+			}
+		} catch {
+			tiers = [];
+			tiersLoaded = true;
+		}
+	}
+
+	function toggleTier(id: number) {
+		if (enabledTierIds.includes(id)) {
+			if (enabledTierIds.length <= 1) return;
+			enabledTierIds = enabledTierIds.filter((x) => x !== id);
+		} else {
+			enabledTierIds = [...enabledTierIds, id];
+		}
+	}
+
+	function switchFilterMode(m: FilterMode) {
+		if (filterMode === m) return;
+		filterMode = m;
+		if (m === "tier") loadTiers();
+	}
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) {
@@ -164,15 +203,36 @@
 		winner = undefined;
 		showResult = false;
 		try {
-			const r = await axios.get("/watched", {
-				params: {
-					status: enabledStatuses.join(","),
-					limit: 200,
-					page: 1,
-				},
-			});
-			const results = r.data?.results ?? r.data ?? [];
-			items = results.filter((m: Media) => m.name);
+			if (filterMode === "tier") {
+				await loadTiers();
+				const watchedIds = new Set<number>();
+				for (const tier of tiers) {
+					if (enabledTierIds.includes(tier.id)) {
+						for (const ti of tier.tierItems ?? []) {
+							watchedIds.add(ti.watchedId);
+						}
+					}
+				}
+				if (watchedIds.size === 0) {
+					items = [];
+					loading = false;
+					return;
+				}
+				// Load all watched to map by id, then build Media list
+				const r = await axios.get("/watched", { params: { limit: 500, page: 1 } });
+				const results: Media[] = r.data?.results ?? r.data ?? [];
+				items = results.filter((m) => m.name && m.watched && watchedIds.has(m.watched.id));
+			} else {
+				const r = await axios.get("/watched", {
+					params: {
+						status: enabledStatuses.join(","),
+						limit: 200,
+						page: 1,
+					},
+				});
+				const results = r.data?.results ?? r.data ?? [];
+				items = results.filter((m: Media) => m.name);
+			}
 		} catch {
 			error = "Failed to load your list.";
 			items = [];
@@ -182,6 +242,8 @@
 
 	$effect(() => {
 		void enabledStatuses;
+		void enabledTierIds;
+		void filterMode;
 		loadItems();
 	});
 
@@ -308,18 +370,57 @@
 <div class="picker-page">
 	<PageTitle title="Random Picker" />
 
-	<!-- Status filters -->
-	<div class="picker-filters">
-		{#each [["PLANNED", "Planned"], ["WATCHING", "Watching"], ["HOLD", "On Hold"]] as [s, label]}
-			<button
-				class="plain filter-btn"
-				class:active={enabledStatuses.includes(s as WatchedStatus)}
-				onclick={() => toggleStatus(s as WatchedStatus)}
-			>
-				{label}{statusCounts[s] != null ? ` (${statusCounts[s]})` : ""}
-			</button>
-		{/each}
+	<!-- Filter mode toggle -->
+	<div class="filter-mode-toggle">
+		<button
+			class="plain filter-mode-btn"
+			class:active={filterMode === "status"}
+			onclick={() => switchFilterMode("status")}
+		>
+			Status
+		</button>
+		<button
+			class="plain filter-mode-btn"
+			class:active={filterMode === "tier"}
+			onclick={() => switchFilterMode("tier")}
+		>
+			Tierlist
+		</button>
 	</div>
+
+	<!-- Status filters -->
+	{#if filterMode === "status"}
+		<div class="picker-filters">
+			{#each [["PLANNED", "Planned"], ["WATCHING", "Watching"], ["HOLD", "On Hold"]] as [s, label]}
+				<button
+					class="plain filter-btn"
+					class:active={enabledStatuses.includes(s as WatchedStatus)}
+					onclick={() => toggleStatus(s as WatchedStatus)}
+				>
+					{label}{statusCounts[s] != null ? ` (${statusCounts[s]})` : ""}
+				</button>
+			{/each}
+		</div>
+	{:else}
+		<div class="picker-filters">
+			{#if !tiersLoaded}
+				<SpinnerTiny />
+			{:else if tiers.length === 0}
+				<span class="no-tiers">No tiers found. Create a tierlist first.</span>
+			{:else}
+				{#each tiers as tier}
+					<button
+						class="plain filter-btn tier-filter-btn"
+						class:active={enabledTierIds.includes(tier.id)}
+						onclick={() => toggleTier(tier.id)}
+						style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};"
+					>
+						{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
+					</button>
+				{/each}
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Mode toggle -->
 	<div class="mode-toggle">
@@ -481,6 +582,40 @@
 		justify-content: center;
 	}
 
+	.filter-mode-toggle {
+		display: flex;
+		gap: 4px;
+		background: $accent-color;
+		border-radius: 10px;
+		padding: 3px;
+	}
+
+	.filter-mode-btn {
+		padding: 6px 14px;
+		border-radius: 8px;
+		border: none;
+		background: transparent;
+		color: $text-color-accent;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background-color 150ms ease, color 150ms ease;
+
+		&.active {
+			background: $accent-color-hover;
+			color: $bg-color;
+		}
+
+		&:hover:not(.active) {
+			color: $text-color;
+		}
+	}
+
+	.no-tiers {
+		font-size: 13px;
+		color: $text-color-accent;
+	}
+
 	.filter-label {
 		font-size: 14px;
 		color: $text-color-accent;
@@ -508,6 +643,19 @@
 
 		&.active {
 			border-color: $bg-color;
+		}
+	}
+
+	.tier-filter-btn {
+		border-color: var(--tier-bg);
+		background: transparent;
+		color: $text-color;
+
+		&:hover,
+		&.active {
+			background: var(--tier-bg);
+			color: var(--tier-text);
+			border-color: var(--tier-bg);
 		}
 	}
 
