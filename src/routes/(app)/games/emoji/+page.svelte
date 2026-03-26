@@ -301,6 +301,8 @@
 						<span class="word revealed">{word}</span>{' '}
 					{:else if visibleSet.has(i)}
 						<span class="word revealed spawn">{word}</span>{' '}
+					{:else if i % 2 === 1}
+						<span class="word blurred">{word}</span>{' '}
 					{/if}
 				{/each}
 			</p>
@@ -372,6 +374,7 @@
 	.overview-text { font-size: 15px; line-height: 1.8; color: $text-color; margin: 0; font-style: italic; }
 	.word { display: inline; transition: filter 300ms ease, opacity 300ms ease; }
 	.word.revealed { filter: none; opacity: 1; }
+	.word.blurred { filter: blur(6px); opacity: 0.7; user-select: none; }
 	.word.spawn { animation: word-pop 300ms ease; }
 	@keyframes word-pop { 0% { opacity: 0; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
 	.timer-bar-wrap { width: 100%; height: 28px; background: $accent-color; border-radius: 14px; position: relative; overflow: hidden; border: 1px solid $bg-color-accent; }

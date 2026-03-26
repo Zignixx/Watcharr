@@ -10,7 +10,7 @@
 	import PageTitle from "@/lib/generic/PageTitle.svelte";
 
 	type FilterMode = "status" | "tier";
-	type CompareMode = "rating" | "year";
+	type CompareMode = "rating" | "year" | "episodes";
 
 	// --- Filter state ---
 	let filterMode: FilterMode = $state("status");
@@ -107,10 +107,14 @@
 				for (const t of tiers) { if (enabledTierIds.includes(t.id)) for (const ti of t.tierItems ?? []) ids.add(ti.watchedId); }
 				if (ids.size === 0) { allItems = []; loading = false; return; }
 				const r = await axios.get("/watched", { params: { limit: 500, page: 1 } });
-				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name && m.watched && ids.has(m.watched.id));
+				let items = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name && m.watched && ids.has(m.watched.id));
+				if (compareMode === "episodes") items = items.filter((m: Media) => m.type === MediaTypeE.tmdbShow);
+				allItems = items;
 			} else {
 				const r = await axios.get("/watched", { params: { status: enabledStatuses.join(","), limit: 500, page: 1 } });
-				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name);
+				let items = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name);
+				if (compareMode === "episodes") items = items.filter((m: Media) => m.type === MediaTypeE.tmdbShow);
+				allItems = items;
 			}
 		} catch { error = "Failed to load items."; allItems = []; }
 		loading = false;
@@ -150,6 +154,9 @@
 		if (compareMode === "rating") {
 			const r = detail.rating ?? 0;
 			return Math.round(r) / 10; // TMDB 100 scale -> 10 scale
+		} else if (compareMode === "episodes") {
+			const seasons: { number: number; episodeCount: number }[] = (detail as any).seasons ?? [];
+			return seasons.filter(s => s.number > 0).reduce((sum, s) => sum + (s.episodeCount ?? 0), 0);
 		} else {
 			if (!detail.releaseDate) return 0;
 			return new Date(detail.releaseDate).getFullYear();
@@ -158,6 +165,7 @@
 
 	function formatValue(val: number): string {
 		if (compareMode === "rating") return val.toFixed(1);
+		if (compareMode === "episodes") return `${val} Episodes`;
 		return String(val);
 	}
 
@@ -267,6 +275,9 @@
 			<button class="plain compare-btn" class:active={compareMode === "year"} onclick={() => { compareMode = "year"; }}>
 				<Icon i="calendar" wh={16} /> Release Year
 			</button>
+			<button class="plain compare-btn" class:active={compareMode === "episodes"} onclick={() => { compareMode = "episodes"; }}>
+				<Icon i="tv" wh={16} /> Episodes
+			</button>
 		</div>
 
 		<!-- Filter mode -->
@@ -310,7 +321,7 @@
 		<div class="game-header">
 			<div class="game-stat"><span class="stat-label">Streak</span><span class="stat-value">🔥 {streak}</span></div>
 			<div class="game-stat"><span class="stat-label">Score</span><span class="stat-value">{score.toLocaleString()}</span></div>
-			<div class="game-stat"><span class="stat-label">Comparing</span><span class="stat-value">{compareMode === "rating" ? "⭐ Rating" : "📅 Year"}</span></div>
+			<div class="game-stat"><span class="stat-label">Comparing</span><span class="stat-value">{compareMode === "rating" ? "⭐ Rating" : compareMode === "episodes" ? "📺 Episodes" : "📅 Year"}</span></div>
 		</div>
 
 		<div class="hl-arena">
@@ -323,7 +334,7 @@
 					{/if}
 					<h3>{leftItem.name}</h3>
 					<div class="hl-value">{formatValue(leftValue)}</div>
-					<span class="hl-value-label">{compareMode === "rating" ? "Rating" : "Released"}</span>
+					<span class="hl-value-label">{compareMode === "rating" ? "Rating" : compareMode === "episodes" ? "Total Episodes" : "Released"}</span>
 				{/if}
 			</div>
 
@@ -343,7 +354,7 @@
 
 					{#if revealed}
 						<div class="hl-value reveal-anim">{formatValue(rightValue)}</div>
-						<span class="hl-value-label">{compareMode === "rating" ? "Rating" : "Released"}</span>
+						<span class="hl-value-label">{compareMode === "rating" ? "Rating" : compareMode === "episodes" ? "Total Episodes" : "Released"}</span>
 						<div class="hl-verdict">{wasCorrect ? "✅ Correct!" : "❌ Wrong!"}</div>
 					{:else}
 						<div class="hl-value">?</div>

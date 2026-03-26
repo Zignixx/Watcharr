@@ -14,6 +14,8 @@
 	interface Question {
 		text: string;
 		image?: string;
+		blurredPoster?: boolean;
+		summaryWords?: { word: string; blurred: boolean }[];
 		options: string[];
 		correctIndex: number;
 		category: string;
@@ -278,11 +280,14 @@
 		let snippet = detail.summary;
 		snippet = snippet.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '???');
 		if (snippet.length > 120) snippet = snippet.slice(0, 120).replace(/\s\S*$/, '') + '…';
+		const words = snippet.split(/\s+/);
+		const summaryWords = words.map((w, i) => ({ word: w, blurred: i % 2 === 1 }));
 		const wrongItems = shuffle(pool.filter(m => m.name !== item.name)).slice(0, 3);
 		if (wrongItems.length < 3) return null;
 		const opts = shuffle([item.name!, ...wrongItems.map(m => m.name!)]);
 		return {
-			text: `Which item has this description?\n"${snippet}"`,
+			text: `Which item has this description?`,
+			summaryWords,
 			options: opts,
 			correctIndex: opts.indexOf(item.name!),
 			category: "Description",
@@ -298,6 +303,7 @@
 		return {
 			text: `What is the name of this item?`,
 			image: poster,
+			blurredPoster: true,
 			options: opts,
 			correctIndex: opts.indexOf(item.name!),
 			category: "Poster",
@@ -481,6 +487,19 @@
 			}
 		}
 		while (compIdx < compQuestions.length) finalQs.push(compQuestions[compIdx++]);
+
+		// Rearrange so no two consecutive questions share the same category
+		for (let i = 1; i < finalQs.length; i++) {
+			if (finalQs[i].category === finalQs[i - 1].category) {
+				// Find the nearest later question with a different category and swap
+				for (let j = i + 1; j < finalQs.length; j++) {
+					if (finalQs[j].category !== finalQs[i - 1].category && (i < 2 || finalQs[j].category !== finalQs[i - 2].category)) {
+						[finalQs[i], finalQs[j]] = [finalQs[j], finalQs[i]];
+						break;
+					}
+				}
+			}
+		}
 
 		questions = finalQs;
 		totalQuestions = finalQs.length;
@@ -676,9 +695,18 @@
 		<div class="question-card">
 			<span class="q-category">{q.category}</span>
 			{#if q.image}
-				<img class="q-image" src={q.image} alt="?" />
+				<img class="q-image" class:blurred-poster={q.blurredPoster && !answered} src={q.image} alt="?" />
 			{/if}
-			<h2 class="q-text">{q.text}</h2>
+			{#if q.summaryWords}
+				<h2 class="q-text">{q.text}</h2>
+				<p class="summary-words">
+					{#each q.summaryWords as sw}
+						<span class="sw" class:sw-blurred={sw.blurred}>{sw.word}</span>{' '}
+					{/each}
+				</p>
+			{:else}
+				<h2 class="q-text">{q.text}</h2>
+			{/if}
 		</div>
 
 		<div class="options-grid">
@@ -942,6 +970,29 @@
 		height: 140px;
 		object-fit: cover;
 		border-radius: 10px;
+		transition: filter 300ms ease;
+
+		&.blurred-poster {
+			filter: blur(10px);
+		}
+	}
+
+	.summary-words {
+		margin: 0;
+		font-size: 15px;
+		line-height: 1.6;
+		text-align: center;
+		color: $text-color;
+		max-width: 100%;
+	}
+
+	.sw {
+		display: inline;
+
+		&.sw-blurred {
+			filter: blur(6px);
+			user-select: none;
+		}
 	}
 
 	.q-text {
