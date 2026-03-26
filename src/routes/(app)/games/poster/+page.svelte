@@ -56,7 +56,11 @@
 		action();
 	}
 
-	const BLUR_LEVELS = [10, 7, 4, 2, 0]; // progressively clearer
+	function getBlurForRound(r: number): number {
+		if (r < 3) return 10;
+		if (r < 6) return 20;
+		return 30;
+	}
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) {
@@ -142,7 +146,7 @@
 		options = allOpts;
 		correctIndex = allOpts.indexOf(currentItem.name ?? "Unknown");
 
-		blurLevel = BLUR_LEVELS[0];
+		blurLevel = getBlurForRound(round);
 		guessesLeft = 2;
 		selectedAnswer = null;
 		answered = false;

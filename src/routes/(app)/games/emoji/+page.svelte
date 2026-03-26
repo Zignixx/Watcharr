@@ -297,12 +297,11 @@
 		<div class="overview-card">
 			<p class="overview-text">
 				{#each words as word, i}
-					{#if answered || visibleSet.has(i)}
-						<span class="word revealed">{word}</span>
-					{:else}
-						<span class="word blurred">{word}</span>
+					{#if answered}
+						<span class="word revealed">{word}</span>{' '}
+					{:else if visibleSet.has(i)}
+						<span class="word revealed spawn">{word}</span>{' '}
 					{/if}
-					{' '}
 				{/each}
 			</p>
 		</div>
@@ -373,7 +372,8 @@
 	.overview-text { font-size: 15px; line-height: 1.8; color: $text-color; margin: 0; font-style: italic; }
 	.word { display: inline; transition: filter 300ms ease, opacity 300ms ease; }
 	.word.revealed { filter: none; opacity: 1; }
-	.word.blurred { filter: blur(5px); opacity: 0.5; user-select: none; pointer-events: none; }
+	.word.spawn { animation: word-pop 300ms ease; }
+	@keyframes word-pop { 0% { opacity: 0; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
 	.timer-bar-wrap { width: 100%; height: 28px; background: $accent-color; border-radius: 14px; position: relative; overflow: hidden; border: 1px solid $bg-color-accent; }
 	.timer-bar { height: 100%; background: $accent-color-hover; border-radius: 14px; transition: width 100ms linear; }
 	.timer-bar.timer-low { background: #ff6b6b; }
