@@ -7,8 +7,8 @@ type GameScoreSaveRequest struct {
 }
 
 type GameScoreResponse struct {
-	Game       string `json:"game"`
-	HighScore  int    `json:"highScore"`
-	BestStreak int    `json:"bestStreak"`
-	TimesPlayed int   `json:"timesPlayed"`
+	Game        string `json:"game"`
+	HighScore   int    `json:"highScore"`
+	BestStreak  int    `json:"bestStreak"`
+	TimesPlayed int    `json:"timesPlayed"`
 }
