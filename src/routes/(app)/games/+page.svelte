@@ -70,6 +70,70 @@
 			{/if}
 			<span class="game-tag">Visual Challenge</span>
 		</a>
+
+		<a href="/games/emoji" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #f7971e, #ffd200);">
+				<Icon i="document" wh={40} />
+			</div>
+			<h3>Plot Twist</h3>
+			<p>Read a plot description and guess which item from your watchlist it belongs to!</p>
+			{#if scores.emoji}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.emoji.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.emoji.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.emoji.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Story Detective</span>
+		</a>
+
+		<a href="/games/timeline" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #a18cd1, #fbc2eb);">
+				<Icon i="calendar" wh={40} />
+			</div>
+			<h3>Release Timeline</h3>
+			<p>Sort 4 items from oldest to newest by release date. Drag or use arrows to reorder!</p>
+			{#if scores.timeline}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.timeline.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.timeline.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.timeline.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Sort Challenge</span>
+		</a>
+
+		<a href="/games/rating" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #ffd43b, #ff9800);">
+				<Icon i="star" wh={40} />
+			</div>
+			<h3>Rating Guess</h3>
+			<p>How well do you know TMDB ratings? Use the slider to guess each item's score!</p>
+			{#if scores.rating}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.rating.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.rating.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.rating.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">10 Rounds</span>
+		</a>
+
+		<a href="/games/oddone" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #11998e, #38ef7d);">
+				<Icon i="search" wh={40} />
+			</div>
+			<h3>Odd One Out</h3>
+			<p>Three items share a genre, one doesn't. Can you spot the odd one?</p>
+			{#if scores.oddone}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.oddone.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.oddone.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.oddone.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Genre Detective</span>
+		</a>
 	</div>
 </div>
 
