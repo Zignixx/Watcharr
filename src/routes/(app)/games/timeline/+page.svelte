@@ -25,7 +25,6 @@
 	let roundItems: Media[] = $state([]);
 	let userOrder: Media[] = $state([]);
 	let correctOrder: Media[] = $state([]);
-	let dragItem: Media | null = $state(null);
 	let submitted = $state(false);
 	let roundCorrect = $state(false);
 	let score = $state(0);
@@ -33,6 +32,11 @@
 	let streak = $state(0);
 	let bestStreak = $state(0);
 	let usedKeys = new Set<string>();
+
+	// Drag state
+	let dragIdx = $state(-1);
+	let dragOverIdx = $state(-1);
+	let isDragging = $state(false);
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) { if (enabledStatuses.length <= 1) return; enabledStatuses = enabledStatuses.filter((x) => x !== s); }
@@ -89,15 +93,15 @@
 	}
 
 	function getKey(m: Media): string {
-		return `${m.type}-${m.ids?.tmdbId ?? m.ids?.igdbId ?? m.name}`;
+		return `${m.type}-${m.ids?.tmdb ?? m.ids?.igdb ?? m.name}`;
 	}
 
 	async function fetchDetails(m: Media): Promise<Media | null> {
 		try {
 			const ct = getContentType(m);
-			const id = ct === "game" ? m.ids?.igdbId : m.ids?.tmdbId;
+			const id = ct === "game" ? m.ids?.igdb : m.ids?.tmdb;
 			if (!id) return null;
-			const r = await axios.get(`/content/${ct}/${id}`);
+			const r = ct === "game" ? await axios.get(`/game/${id}`) : await axios.get(`/content/${ct}/${id}`);
 			return r.data;
 		} catch { return null; }
 	}
@@ -153,6 +157,26 @@
 		const [item] = arr.splice(from, 1);
 		arr.splice(to, 0, item);
 		userOrder = arr;
+	}
+
+	function onDragStart(idx: number) {
+		if (submitted) return;
+		dragIdx = idx;
+		isDragging = true;
+	}
+
+	function onDragEnter(idx: number) {
+		if (dragIdx < 0 || idx === dragIdx) return;
+		dragOverIdx = idx;
+		// Immediately reorder while dragging for live preview
+		moveItem(dragIdx, idx);
+		dragIdx = idx;
+	}
+
+	function onDragEnd() {
+		dragIdx = -1;
+		dragOverIdx = -1;
+		isDragging = false;
 	}
 
 	async function submitOrder() {
@@ -233,7 +257,9 @@
 				{:else if tiers.length === 0}<span class="no-tiers">No tiers found.</span>
 				{:else}
 					{#each tiers as tier}
-						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">{tier.name}</button>
+						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">
+						{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
+					</button>
 					{/each}
 				{/if}
 			</div>
@@ -253,19 +279,22 @@
 
 		<p class="instruction">Drag to sort: Oldest → Newest</p>
 
-		<div class="sort-list">
+		<div class="sort-list" class:dragging={isDragging}>
 			{#each userOrder as item, i (getKey(item))}
 				{@const poster = getPoster(item)}
 				{@const isCorrectPos = submitted && getKey(item) === getKey(correctOrder[i])}
 				{@const isWrongPos = submitted && getKey(item) !== getKey(correctOrder[i])}
+				{@const isBeingDragged = dragIdx === i}
 				<div
 					class="sort-item"
 					class:correct={isCorrectPos}
 					class:wrong={isWrongPos}
+					class:dragging-item={isBeingDragged}
 					draggable={!submitted}
-					ondragstart={() => dragItem = item}
+					ondragstart={() => onDragStart(i)}
+					ondragenter={() => onDragEnter(i)}
 					ondragover={(e) => e.preventDefault()}
-					ondrop={() => { if (dragItem) { const from = userOrder.indexOf(dragItem); moveItem(from, i); dragItem = null; } }}
+					ondragend={onDragEnd}
 				>
 					<span class="sort-number">{i + 1}</span>
 					{#if poster}<img src={poster} alt="" class="sort-poster" />{/if}
@@ -317,6 +346,10 @@
 	.filter-mode-btn { padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: $text-color-accent; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; } &:hover:not(.active) { color: $text-color; } }
 	.picker-filters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 	.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid $bg-color-accent; background: transparent; color: $text-color-accent; font-size: 12px; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; border-color: $accent-color-hover; } }
+	.tier-filter-btn {
+		border-color: var(--tier-bg);
+		&:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); }
+	}
 	.error-msg { color: #ff6b6b; font-size: 14px; }
 	.start-btn { display: flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; background: $accent-color-hover; color: $bg-color; fill: $bg-color; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 150ms ease, opacity 150ms ease; &:hover { transform: scale(1.03); } &:disabled { opacity: 0.5; cursor: not-allowed; } }
 	.game-header { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
@@ -324,8 +357,35 @@
 	.stat-label { font-size: 11px; color: $text-color-accent; font-weight: 600; text-transform: uppercase; }
 	.stat-value { font-size: 20px; font-weight: 700; }
 	.instruction { font-size: 14px; color: $text-color-accent; margin: 0; font-weight: 600; }
-	.sort-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-	.sort-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: $accent-color; border: 2px solid $bg-color-accent; cursor: grab; transition: all 200ms ease; &:active { cursor: grabbing; } &.correct { border-color: #51cf66; background: rgba(81,207,102,0.15); } &.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); } }
+	.sort-list { display: flex; flex-direction: column; gap: 8px; width: 100%; &.dragging { user-select: none; } }
+	.sort-item {
+		display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px;
+		background: $accent-color; border: 2px solid $bg-color-accent; cursor: grab;
+		transition: transform 300ms cubic-bezier(0.2, 0, 0, 1), box-shadow 200ms ease, border-color 200ms ease, background 200ms ease, opacity 200ms ease;
+		&:active { cursor: grabbing; }
+		&.dragging-item {
+			opacity: 0.85;
+			transform: scale(1.03);
+			box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+			border-color: $accent-color-hover;
+			z-index: 10;
+			position: relative;
+		}
+		&.correct { border-color: #51cf66; background: rgba(81,207,102,0.15); animation: sort-pop 300ms ease; }
+		&.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); animation: sort-shake 400ms ease; }
+	}
+	@keyframes sort-pop {
+		0% { transform: scale(1); }
+		50% { transform: scale(1.04); }
+		100% { transform: scale(1); }
+	}
+	@keyframes sort-shake {
+		0%, 100% { transform: translateX(0); }
+		20% { transform: translateX(-6px); }
+		40% { transform: translateX(6px); }
+		60% { transform: translateX(-4px); }
+		80% { transform: translateX(4px); }
+	}
 	.sort-number { font-size: 16px; font-weight: 700; color: $text-color-accent; min-width: 24px; text-align: center; }
 	.sort-poster { width: 32px; height: 44px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
 	.sort-name { font-size: 14px; font-weight: 600; color: $text-color; flex: 1; }

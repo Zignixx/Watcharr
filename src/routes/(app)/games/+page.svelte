@@ -103,22 +103,6 @@
 			<span class="game-tag">Sort Challenge</span>
 		</a>
 
-		<a href="/games/rating" class="game-card">
-			<div class="game-icon" style="background: linear-gradient(135deg, #ffd43b, #ff9800);">
-				<Icon i="star" wh={40} />
-			</div>
-			<h3>Rating Guess</h3>
-			<p>How well do you know TMDB ratings? Use the slider to guess each item's score!</p>
-			{#if scores.rating}
-				<div class="score-row">
-					<span class="score-badge">🏆 {scores.rating.highScore.toLocaleString()}</span>
-					<span class="score-badge">🔥 {scores.rating.bestStreak}</span>
-					<span class="score-badge">🎮 {scores.rating.timesPlayed}x</span>
-				</div>
-			{/if}
-			<span class="game-tag">10 Rounds</span>
-		</a>
-
 		<a href="/games/oddone" class="game-card">
 			<div class="game-icon" style="background: linear-gradient(135deg, #11998e, #38ef7d);">
 				<Icon i="search" wh={40} />

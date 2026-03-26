@@ -91,15 +91,15 @@
 	}
 
 	function getKey(m: Media): string {
-		return `${m.type}-${m.ids?.tmdbId ?? m.ids?.igdbId ?? m.name}`;
+		return `${m.type}-${m.ids?.tmdb ?? m.ids?.igdb ?? m.name}`;
 	}
 
 	async function fetchDetails(m: Media): Promise<Media | null> {
 		try {
 			const ct = getContentType(m);
-			const id = ct === "game" ? m.ids?.igdbId : m.ids?.tmdbId;
+			const id = ct === "game" ? m.ids?.igdb : m.ids?.tmdb;
 			if (!id) return null;
-			const r = await axios.get(`/content/${ct}/${id}`);
+			const r = ct === "game" ? await axios.get(`/game/${id}`) : await axios.get(`/content/${ct}/${id}`);
 			return r.data;
 		} catch { return null; }
 	}
@@ -126,9 +126,9 @@
 			const detail = await fetchDetails(m);
 			if (!detail || !detail.rating || detail.rating === 0) continue;
 			currentItem = m;
-			actualRating = Math.round(detail.rating * 10) / 10;
+			actualRating = detail.rating;
 			usedKeys.add(getKey(m));
-			userGuess = 5.0;
+			userGuess = 5;
 			submitted = false;
 			roundScore = 0;
 			return true;
@@ -151,12 +151,12 @@
 
 		const diff = Math.abs(userGuess - actualRating);
 		const maxPoints = 500;
-		// Score: closer = more points. Perfect = 500, off by 5 = 0
+		// Score: closer = more points. Perfect = 500, off by 5+ = 0
 		roundScore = Math.max(0, Math.round(maxPoints * (1 - diff / 5)));
 		totalDiff += diff;
 		score += roundScore;
 
-		if (diff < 0.5) {
+		if (diff <= 1) {
 			streak++;
 			if (streak > bestStreak) bestStreak = streak;
 		} else {
@@ -206,7 +206,9 @@
 				{:else if tiers.length === 0}<span class="no-tiers">No tiers found.</span>
 				{:else}
 					{#each tiers as tier}
-						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">{tier.name}</button>
+						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">
+						{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
+					</button>
 					{/each}
 				{/if}
 			</div>
@@ -234,8 +236,8 @@
 			<div class="slider-area">
 				<div class="slider-labels">
 					<span>0</span>
-					<span class="guess-display" class:perfect={submitted && Math.abs(userGuess - actualRating) < 0.3} class:close={submitted && Math.abs(userGuess - actualRating) < 1} class:far={submitted && Math.abs(userGuess - actualRating) >= 1}>
-						{userGuess.toFixed(1)}
+					<span class="guess-display" class:perfect={submitted && userGuess === actualRating} class:close={submitted && Math.abs(userGuess - actualRating) <= 1} class:far={submitted && Math.abs(userGuess - actualRating) > 1}>
+						{userGuess}
 					</span>
 					<span>10</span>
 				</div>
@@ -258,15 +260,15 @@
 				<div class="reveal-area">
 					<div class="reveal-rating">
 						<span class="reveal-label">Actual Rating</span>
-						<span class="reveal-value">{actualRating.toFixed(1)}</span>
+						<span class="reveal-value">{actualRating}</span>
 					</div>
 					<div class="reveal-diff">
-						{#if Math.abs(userGuess - actualRating) < 0.3}
+						{#if userGuess === actualRating}
 							<span class="diff-badge perfect">🎯 Perfect! +{roundScore}</span>
-						{:else if Math.abs(userGuess - actualRating) < 1}
-							<span class="diff-badge close">👍 Close! Off by {Math.abs(userGuess - actualRating).toFixed(1)} → +{roundScore}</span>
+						{:else if Math.abs(userGuess - actualRating) <= 1}
+							<span class="diff-badge close">👍 Close! Off by {Math.abs(userGuess - actualRating)} → +{roundScore}</span>
 						{:else}
-							<span class="diff-badge far">😬 Off by {Math.abs(userGuess - actualRating).toFixed(1)} → +{roundScore}</span>
+							<span class="diff-badge far">😬 Off by {Math.abs(userGuess - actualRating)} → +{roundScore}</span>
 						{/if}
 					</div>
 				</div>
@@ -297,6 +299,10 @@
 	.filter-mode-btn { padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: $text-color-accent; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; } &:hover:not(.active) { color: $text-color; } }
 	.picker-filters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 	.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid $bg-color-accent; background: transparent; color: $text-color-accent; font-size: 12px; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; border-color: $accent-color-hover; } }
+	.tier-filter-btn {
+		border-color: var(--tier-bg);
+		&:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); }
+	}
 	.error-msg { color: #ff6b6b; font-size: 14px; }
 	.start-btn { display: flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; background: $accent-color-hover; color: $bg-color; fill: $bg-color; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 150ms ease, opacity 150ms ease; &:hover { transform: scale(1.03); } &:disabled { opacity: 0.5; cursor: not-allowed; } }
 	.game-header { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }

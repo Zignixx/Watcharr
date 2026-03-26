@@ -91,9 +91,9 @@
 	async function fetchDetails(m: Media): Promise<Media | null> {
 		try {
 			const ct = getContentType(m);
-			const id = ct === "game" ? m.ids?.igdbId : m.ids?.tmdbId;
+			const id = ct === "game" ? m.ids?.igdb : m.ids?.tmdb;
 			if (!id) return null;
-			const r = await axios.get(`/content/${ct}/${id}`);
+			const r = ct === "game" ? await axios.get(`/game/${id}`) : await axios.get(`/content/${ct}/${id}`);
 			return r.data;
 		} catch { return null; }
 	}
@@ -206,7 +206,9 @@
 				{:else if tiers.length === 0}<span class="no-tiers">No tiers found.</span>
 				{:else}
 					{#each tiers as tier}
-						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">{tier.name}</button>
+						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">
+						{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
+					</button>
 					{/each}
 				{/if}
 			</div>
@@ -268,6 +270,10 @@
 	.filter-mode-btn { padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: $text-color-accent; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; } &:hover:not(.active) { color: $text-color; } }
 	.picker-filters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 	.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid $bg-color-accent; background: transparent; color: $text-color-accent; font-size: 12px; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; border-color: $accent-color-hover; } }
+	.tier-filter-btn {
+		border-color: var(--tier-bg);
+		&:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); }
+	}
 	.error-msg { color: #ff6b6b; font-size: 14px; }
 	.start-btn { display: flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; background: $accent-color-hover; color: $bg-color; fill: $bg-color; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 150ms ease, opacity 150ms ease; &:hover { transform: scale(1.03); } &:disabled { opacity: 0.5; cursor: not-allowed; } }
 	.game-header { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
