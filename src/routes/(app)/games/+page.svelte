@@ -118,6 +118,38 @@
 			{/if}
 			<span class="game-tag">Genre Detective</span>
 		</a>
+
+		<a href="/games/episodes" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #ff9a9e, #fecfef);">
+				<Icon i="film" wh={40} />
+			</div>
+			<h3>Name That Show</h3>
+			<p>Read 2-3 episode titles and guess which TV show they belong to!</p>
+			{#if scores.episodes}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.episodes.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.episodes.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.episodes.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Episode Expert</span>
+		</a>
+
+		<a href="/games/epcount" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+				<Icon i="tv" wh={40} />
+			</div>
+			<h3>Episode Counter</h3>
+			<p>See the total episode count and number of seasons — can you guess which show it is?</p>
+			{#if scores.epcount}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.epcount.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.epcount.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.epcount.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Number Cruncher</span>
+		</a>
 	</div>
 </div>
 

@@ -193,10 +193,10 @@
 			setTimeout(async () => {
 				round++;
 				if (!(await setupRound())) gamePhase = "gameover";
-			}, 2000);
+			}, 3000);
 		} else {
 			streak = 0;
-			setTimeout(() => { gamePhase = "gameover"; }, 2500);
+			setTimeout(() => { gamePhase = "gameover"; }, 5000);
 		}
 	}
 

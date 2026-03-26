@@ -22,7 +22,8 @@
 	let error = $state("");
 	let gamePhase: "setup" | "playing" | "gameover" = $state("setup");
 
-	let currentOverview = $state("");
+	let episodeCount = $state(0);
+	let seasonCount = $state(0);
 	let options: Media[] = $state([]);
 	let correctIndex = $state(0);
 	let selectedAnswer: number | null = $state(null);
@@ -32,7 +33,7 @@
 	let round = $state(0);
 	let streak = $state(0);
 	let bestStreak = $state(0);
-	let usedItems = new Set<string>();
+	let usedKeys = new Set<string>();
 
 	function toggleStatus(s: WatchedStatus) {
 		if (enabledStatuses.includes(s)) { if (enabledStatuses.length <= 1) return; enabledStatuses = enabledStatuses.filter((x) => x !== s); }
@@ -68,10 +69,10 @@
 				for (const t of tiers) { if (enabledTierIds.includes(t.id)) for (const ti of t.tierItems ?? []) ids.add(ti.watchedId); }
 				if (ids.size === 0) { allItems = []; loading = false; return; }
 				const r = await axios.get("/watched", { params: { limit: 500, page: 1 } });
-				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name && m.watched && ids.has(m.watched.id));
+				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name && m.type === MediaTypeE.tmdbShow && m.watched && ids.has(m.watched.id));
 			} else {
 				const r = await axios.get("/watched", { params: { status: enabledStatuses.join(","), limit: 500, page: 1 } });
-				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name);
+				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name && m.type === MediaTypeE.tmdbShow);
 			}
 		} catch { error = "Failed to load items."; allItems = []; }
 		loading = false;
@@ -81,46 +82,53 @@
 		const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a;
 	}
 
-	function getContentType(m: Media): string {
-		if (m.type === MediaTypeE.tmdbMovie) return "movie";
-		if (m.type === MediaTypeE.tmdbShow) return "tv";
-		if (m.type === MediaTypeE.igdbGame) return "game";
-		return "movie";
+	function getKey(m: Media): string {
+		return `tv-${m.ids?.tmdb ?? m.name}`;
 	}
 
-	async function fetchDetails(m: Media): Promise<Media | null> {
+	function getPoster(m: Media): string {
+		if (m.poster?.path) return `${baseURL}/${m.poster.path}`;
+		if (!m.extPosterPath) return "";
+		if (m.watched) return `${baseURL}/img${m.extPosterPath}`;
+		return `https://image.tmdb.org/t/p/w300${m.extPosterPath}`;
+	}
+
+	async function getEpisodeCount(tmdbId: number): Promise<{ total: number; seasons: number } | null> {
 		try {
-			const ct = getContentType(m);
-			const id = ct === "game" ? m.ids?.igdb : m.ids?.tmdb;
-			if (!id) return null;
-			const r = ct === "game" ? await axios.get(`/game/${id}`) : await axios.get(`/content/${ct}/${id}`);
-			return r.data;
+			const r = await axios.get(`/content/tv/${tmdbId}`);
+			const seasons: { number: number; episodeCount: number }[] = r.data?.seasons ?? [];
+			const realSeasons = seasons.filter(s => s.number > 0);
+			if (realSeasons.length === 0) return null;
+			const total = realSeasons.reduce((sum, s) => sum + s.episodeCount, 0);
+			if (total === 0) return null;
+			return { total, seasons: realSeasons.length };
 		} catch { return null; }
 	}
 
 	async function setupRound(): Promise<boolean> {
-		let pool = allItems.filter((m) => !usedItems.has(m.name ?? ""));
-		if (pool.length < 4) { usedItems.clear(); pool = [...allItems]; }
+		let pool = allItems.filter(m => !usedKeys.has(getKey(m)));
+		if (pool.length < 4) { usedKeys.clear(); pool = [...allItems]; }
 		if (pool.length < 4) return false;
 
 		const candidates = shuffle(pool);
-		// Find one with an overview
+
 		for (const candidate of candidates) {
-			const detail = await fetchDetails(candidate);
-			if (!detail?.summary || detail.summary.length < 20) continue;
+			const tmdbId = candidate.ids?.tmdb;
+			if (!tmdbId) continue;
 
-			usedItems.add(candidate.name ?? "");
-			const wrongItems = shuffle(pool.filter((m) => m.name !== candidate.name)).slice(0, 3);
-			if (wrongItems.length < 3) continue;
+			const result = await getEpisodeCount(tmdbId);
+			if (!result) continue;
 
-			const allOpts = shuffle([candidate, ...wrongItems]);
-			options = allOpts;
-			correctIndex = allOpts.indexOf(candidate);
-			// Remove the title from overview to avoid giving it away
-			let overview = detail.summary;
-			const name = candidate.name ?? "";
-			overview = overview.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '???');
-			currentOverview = overview;
+			usedKeys.add(getKey(candidate));
+
+			const others = shuffle(allItems.filter(m => getKey(m) !== getKey(candidate))).slice(0, 3);
+			if (others.length < 3) continue;
+
+			const allOptions = shuffle([candidate, ...others]);
+			correctIndex = allOptions.findIndex(m => getKey(m) === getKey(candidate));
+			options = allOptions;
+			episodeCount = result.total;
+			seasonCount = result.seasons;
 			selectedAnswer = null;
 			answered = false;
 			wasCorrect = false;
@@ -131,10 +139,10 @@
 
 	async function startGame() {
 		await loadItems();
-		if (allItems.length < 4) { error = "You need at least 4 items."; return; }
+		if (allItems.length < 4) { error = "You need at least 4 TV shows."; return; }
 		error = ""; score = 0; round = 0; streak = 0; bestStreak = 0;
-		usedItems.clear();
-		if (!(await setupRound())) { error = "Couldn't find items with descriptions."; return; }
+		usedKeys.clear();
+		if (!(await setupRound())) { error = "Couldn't find shows with episode data."; return; }
 		gamePhase = "playing";
 	}
 
@@ -159,34 +167,22 @@
 		}
 	}
 
-	function getPoster(m: Media): string {
-		if (m.poster?.path) return `${baseURL}/${m.poster.path}`;
-		if (!m.extPosterPath) return "";
-		if (m.type === MediaTypeE.tmdbMovie || m.type === MediaTypeE.tmdbShow) {
-			if (m.watched) return `${baseURL}/img${m.extPosterPath}`;
-			return `https://image.tmdb.org/t/p/w92${m.extPosterPath}`;
-		}
-		if (m.type === MediaTypeE.igdbGame) return `https://images.igdb.com/igdb/image/upload/t_thumb/${m.extPosterPath}.jpg`;
-		if (m.type === MediaTypeE.malManga) return m.extPosterPath;
-		return "";
-	}
-
 	onMount(() => { fetchStatusCounts(); loadItems(); });
 
 	$effect(() => {
 		if (gamePhase === "gameover") {
-			axios.post("/gamescore", { game: "emoji", score, bestStreak }).catch(() => {});
+			axios.post("/gamescore", { game: "epcount", score, bestStreak }).catch(() => {});
 		}
 	});
 </script>
 
-<svelte:head><title>Plot Twist</title></svelte:head>
+<svelte:head><title>Episode Counter</title></svelte:head>
 
-<div class="emoji-page">
-	<PageTitle title="Plot Twist" />
+<div class="epcount-page">
+	<PageTitle title="Episode Counter" />
 
 	{#if gamePhase === "setup"}
-		<p class="subtitle">Can you match the description to the right item?</p>
+		<p class="subtitle">Guess which show has this many episodes!</p>
 
 		<div class="filter-mode-toggle">
 			<button class="plain filter-mode-btn" class:active={filterMode === "status"} onclick={() => switchFilterMode("status")}>Status</button>
@@ -207,38 +203,46 @@
 				{:else}
 					{#each tiers as tier}
 						<button class="plain filter-btn tier-filter-btn" class:active={enabledTierIds.includes(tier.id)} onclick={() => toggleTier(tier.id)} style="--tier-bg: {tier.color}; --tier-text: {tier.textColor};">
-						{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
-					</button>
+							{tier.name}{tier.tierItems ? ` (${tier.tierItems.length})` : ""}
+						</button>
 					{/each}
 				{/if}
 			</div>
 		{/if}
 
+		<p class="note">Only TV shows from your watchlist are used.</p>
 		{#if error}<div class="error-msg">{error}</div>{/if}
 		<button class="plain start-btn" onclick={startGame} disabled={loading}>
-			{#if loading}<SpinnerTiny /> Loading...{:else}<Icon i="document" wh={22} /> Start Game{/if}
+			{#if loading}<SpinnerTiny /> Loading...{:else}<Icon i="tv" wh={22} /> Start Game{/if}
 		</button>
 
 	{:else if gamePhase === "playing"}
 		<div class="game-header">
-			<div class="game-stat"><span class="stat-label">Round</span><span class="stat-value">{round + 1}</span></div>
 			<div class="game-stat"><span class="stat-label">Score</span><span class="stat-value">{score.toLocaleString()}</span></div>
+			<div class="game-stat"><span class="stat-label">Round</span><span class="stat-value">{round + 1}</span></div>
 			<div class="game-stat"><span class="stat-label">Streak</span><span class="stat-value">🔥 {streak}</span></div>
 		</div>
 
-		<div class="overview-card">
-			<p class="overview-text">{currentOverview}</p>
+		<div class="clue-card">
+			<div class="big-number">{episodeCount}</div>
+			<span class="clue-label">Total Episodes</span>
+			<span class="clue-sub">{seasonCount} {seasonCount === 1 ? "Season" : "Seasons"}</span>
 		</div>
+
+		<p class="question-text">Which show has this many episodes?</p>
 
 		<div class="options-grid">
 			{#each options as opt, i}
 				{@const poster = getPoster(opt)}
+				{@const isCorrect = i === correctIndex}
+				{@const isSelected = i === selectedAnswer}
 				<button
 					class="plain option-card"
-					class:correct={answered && i === correctIndex}
-					class:wrong={answered && selectedAnswer === i && i !== correctIndex}
-					disabled={answered}
+					class:correct={answered && isCorrect}
+					class:wrong={answered && isSelected && !isCorrect}
+					class:dimmed={answered && !isCorrect && !isSelected}
 					onclick={() => selectAnswer(i)}
+					disabled={answered}
 				>
 					{#if poster}<img src={poster} alt="" class="option-poster" />{/if}
 					<span class="option-name">{opt.name}</span>
@@ -246,13 +250,23 @@
 			{/each}
 		</div>
 
+		{#if answered}
+			<div class="round-feedback">
+				{#if wasCorrect}
+					<span class="feedback-correct">✅ Correct! +{100 + streak * 25}</span>
+				{:else}
+					<span class="feedback-wrong">❌ Wrong! It was {options[correctIndex]?.name}</span>
+				{/if}
+			</div>
+		{/if}
+
 	{:else if gamePhase === "gameover"}
 		<div class="result-card">
-			<div class="result-emoji">{bestStreak >= 10 ? "🏆" : bestStreak >= 5 ? "🌟" : bestStreak >= 3 ? "👍" : "💀"}</div>
+			<div class="result-emoji">{score > 500 ? "🏆" : score > 200 ? "🌟" : score > 0 ? "👍" : "💀"}</div>
 			<h2>Game Over!</h2>
 			<div class="result-stats">
-				<div class="result-stat"><span class="result-stat-value">{score.toLocaleString()}</span><span class="result-stat-label">Total Score</span></div>
-				<div class="result-stat"><span class="result-stat-value">{round} Rounds</span><span class="result-stat-label">Survived</span></div>
+				<div class="result-stat"><span class="result-stat-value">{score.toLocaleString()}</span><span class="result-stat-label">Final Score</span></div>
+				<div class="result-stat"><span class="result-stat-value">{round}</span><span class="result-stat-label">Rounds Survived</span></div>
 				<div class="result-stat"><span class="result-stat-value">🔥 {bestStreak}</span><span class="result-stat-label">Best Streak</span></div>
 			</div>
 			<div class="result-actions">
@@ -264,28 +278,38 @@
 </div>
 
 <style lang="scss">
-	.emoji-page { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px; width: 100%; max-width: 700px; margin: 0 auto; }
-	.subtitle { font-size: 15px; color: $text-color-accent; margin: 0; }
+	.epcount-page { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px; width: 100%; max-width: 550px; margin: 0 auto; }
+	.subtitle { font-size: 15px; color: $text-color-accent; margin: 0; text-align: center; }
+	.note { font-size: 12px; color: $text-color-accent; margin: 0; opacity: 0.7; }
 	.filter-mode-toggle { display: flex; gap: 4px; background: $accent-color; border-radius: 10px; padding: 3px; }
 	.filter-mode-btn { padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: $text-color-accent; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; } &:hover:not(.active) { color: $text-color; } }
 	.picker-filters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 	.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid $bg-color-accent; background: transparent; color: $text-color-accent; font-size: 12px; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; border-color: $accent-color-hover; } }
-	.tier-filter-btn {
-		border-color: var(--tier-bg);
-		&:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); }
-	}
+	.tier-filter-btn { border-color: var(--tier-bg); &:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); } }
 	.error-msg { color: #ff6b6b; font-size: 14px; }
 	.start-btn { display: flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; background: $accent-color-hover; color: $bg-color; fill: $bg-color; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 150ms ease, opacity 150ms ease; &:hover { transform: scale(1.03); } &:disabled { opacity: 0.5; cursor: not-allowed; } }
 	.game-header { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
 	.game-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 	.stat-label { font-size: 11px; color: $text-color-accent; font-weight: 600; text-transform: uppercase; }
 	.stat-value { font-size: 20px; font-weight: 700; }
-	.overview-card { background: $accent-color; border-radius: 14px; padding: 20px 24px; border: 1px solid $bg-color-accent; width: 100%; }
-	.overview-text { font-size: 15px; line-height: 1.7; color: $text-color; margin: 0; font-style: italic; }
-	.options-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
-	.option-card { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: $accent-color; border: 2px solid $bg-color-accent; cursor: pointer; transition: all 200ms ease; text-align: left; &:hover:not(:disabled) { border-color: $accent-color-hover; transform: translateY(-2px); } &.correct { border-color: #51cf66; background: rgba(81,207,102,0.15); } &.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); } &:disabled { cursor: default; } }
-	.option-poster { width: 40px; height: 56px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
-	.option-name { font-size: 13px; font-weight: 600; color: $text-color; }
+	.clue-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 24px 32px; border-radius: 14px; background: $accent-color; border: 1px solid $bg-color-accent; }
+	.big-number { font-size: 56px; font-weight: 800; color: $text-color; line-height: 1; }
+	.clue-label { font-size: 14px; font-weight: 700; color: $text-color-accent; text-transform: uppercase; letter-spacing: 1px; }
+	.clue-sub { font-size: 13px; color: $text-color-accent; opacity: 0.7; }
+	.question-text { font-size: 15px; color: $text-color-accent; margin: 0; font-weight: 500; }
+	.options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+	.option-card { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; border-radius: 12px; background: $accent-color; border: 2px solid transparent; cursor: pointer; transition: all 200ms ease;
+		&:hover:not(:disabled) { border-color: $accent-color-hover; transform: scale(1.02); }
+		&.correct { border-color: #51cf66; background: rgba(81,207,102,0.15); }
+		&.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); }
+		&.dimmed { opacity: 0.4; }
+		&:disabled { cursor: default; }
+	}
+	.option-poster { width: 80px; height: 110px; object-fit: cover; border-radius: 8px; }
+	.option-name { font-size: 13px; font-weight: 600; text-align: center; word-break: break-word; }
+	.round-feedback { text-align: center; }
+	.feedback-correct { font-size: 18px; font-weight: 700; color: #51cf66; }
+	.feedback-wrong { font-size: 18px; font-weight: 700; color: #ff6b6b; }
 	.result-card { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px; border-radius: 16px; background: $accent-color; border: 1px solid $bg-color-accent; }
 	.result-emoji { font-size: 64px; animation: result-bounce 500ms ease; }
 	@keyframes result-bounce { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
