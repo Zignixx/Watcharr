@@ -20,7 +20,7 @@
 	}: Props = $props();
 </script>
 
-<div class="backdrop"></div>
+<div class="backdrop" onclick={onClose} role="presentation"></div>
 <div class="modal">
 	<div style="max-width:{maxWidth};">
 		{#if typeof onClose !== "undefined"}

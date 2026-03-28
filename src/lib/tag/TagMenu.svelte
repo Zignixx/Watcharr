@@ -18,6 +18,10 @@
 		 */
 		showManageBtn?: boolean;
 		menuConfig?: MenuConfig;
+		/** If provided, the parent handles rendering CreateTagModal externally. */
+		onCreateTag?: () => void;
+		/** If provided, the parent handles rendering DeleteTagModal externally. */
+		onDeleteTag?: (tag: TagT) => void;
 	}
 
 	const defaultMenuConfig = {
@@ -32,6 +36,8 @@
 		selectedTags = undefined,
 		showManageBtn = false,
 		menuConfig = {},
+		onCreateTag = undefined,
+		onDeleteTag = undefined,
 	}: Props = $props();
 
 	let allTags = $derived(store.tags);
@@ -41,8 +47,11 @@
 	let tagToDelete: TagT | undefined = $state(undefined);
 
 	function deleteTag(t: TagT) {
-		// This will show the DeleteTagModal (look below).
-		tagToDelete = t;
+		if (onDeleteTag) {
+			onDeleteTag(t);
+		} else {
+			tagToDelete = t;
+		}
 	}
 </script>
 
@@ -57,7 +66,7 @@
 				<Icon i="trash" wh={18} />
 			</button>
 		{/if}
-		<button class="plain" onclick={() => (tagModalOpen = !tagModalOpen)}>
+		<button class="plain" onclick={() => { if (onCreateTag) { onCreateTag(); } else { tagModalOpen = !tagModalOpen; } }}>
 			<Icon i="add" wh={22} />
 		</button>
 	</div>
@@ -91,11 +100,11 @@
 	{/if}
 </Menu>
 
-{#if tagModalOpen}
+{#if !onCreateTag && tagModalOpen}
 	<CreateTagModal onClose={() => (tagModalOpen = false)} />
 {/if}
 
-{#if tagToDelete}
+{#if !onDeleteTag && tagToDelete}
 	<DeleteTagModal tag={tagToDelete} onClose={() => (tagToDelete = undefined)} />
 {/if}
 

@@ -10,6 +10,8 @@
 	import FollowingMenu from "@/lib/nav/FollowingMenu.svelte";
 	import SortMenu from "@/lib/nav/SortMenu.svelte";
 	import TagMenu from "@/lib/tag/TagMenu.svelte";
+	import CreateTagModal from "@/lib/tag/CreateTagModal.svelte";
+	import DeleteTagModal from "@/lib/tag/DeleteTagModal.svelte";
 	import TextImportModal from "@/lib/TextImportModal.svelte";
 	import AboutModal from "@/lib/nav/AboutModal.svelte";
 	import ProxyUserLogoutModal from "@/lib/logout/ProxyUserLogoutModal.svelte";
@@ -19,7 +21,7 @@
 	import { getToken } from "@/lib/util/api";
 	import { notify } from "@/lib/util/notify";
 	import { store, defaultSort } from "@/store.svelte";
-	import { RatingSystem, UserPermission, UserType } from "@/types";
+	import { RatingSystem, UserPermission, UserType, type Tag } from "@/types";
 	import axios from "axios";
 	import { onMount } from "svelte";
 	interface Props {
@@ -44,6 +46,8 @@
 	let textImportShown = $state(false);
 	let aboutModalOpen = $state(false);
 	let proxyUserLogoutShown = $state(false);
+	let createTagModalOpen = $state(false);
+	let tagToDelete: Tag | undefined = $state(undefined);
 
 	// Derived state
 	let user = $derived(store.userInfo);
@@ -330,6 +334,8 @@
 						}}
 						showManageBtn={true}
 						menuConfig={{ width: "200px", right: "unset", top: "0", arrowLeft: "unset", arrowRight: "unset" }}
+						onCreateTag={() => { createTagModalOpen = true; }}
+						onDeleteTag={(tag) => { tagToDelete = tag; }}
 					/>
 				</div>
 			{/if}
@@ -408,6 +414,10 @@
 <!-- Main content -->
 <div class="app-content" class:sidebar-collapsed={sidebarCollapsed}>
 	{#if showContextToolbar && isLoggedIn}
+		{#if sortMenuShown || filterMenuShown || detailedMenuShown}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="submenu-overlay" onclick={() => closeAllSubMenus()}></div>
+		{/if}
 		<div class="content-toolbar">
 			<div class="toolbar-group">
 				{#if showViewExport}
@@ -477,6 +487,14 @@
 
 	{#if proxyUserLogoutShown}
 		<ProxyUserLogoutModal onClose={() => (proxyUserLogoutShown = false)} />
+	{/if}
+
+	{#if createTagModalOpen}
+		<CreateTagModal onClose={() => (createTagModalOpen = false)} />
+	{/if}
+
+	{#if tagToDelete}
+		<DeleteTagModal tag={tagToDelete} onClose={() => (tagToDelete = undefined)} />
 	{/if}
 
 	{#await getInitialData()}
@@ -870,6 +888,13 @@
 		@media screen and (max-width: 768px) {
 			margin-left: 0 !important;
 		}
+	}
+
+	/* ===== SUBMENU OVERLAY ===== */
+	.submenu-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 49;
 	}
 
 	/* ===== CONTENT TOOLBAR ===== */
