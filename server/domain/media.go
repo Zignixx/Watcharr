@@ -66,6 +66,8 @@ type Media struct {
 	// A link to the database we are using that lists all providers with max details.
 	// (especially for TMDB since it's data from JustWatch isn't available to us).
 	ProvidersFullListLink string `json:"providersFullListLink,omitempty"`
+	// Character name (used for person credits).
+	Character string `json:"character,omitempty"`
 
 	//
 	// Properties only for movies/tv.

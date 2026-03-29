@@ -772,6 +772,7 @@ func (t *TMDBPersonCombinedCreditsCastResult) AsMedia() domain.Media {
 	} else {
 		slog.Error("AsMedia: Failed to parse release date", "name", m.Name, "error", err)
 	}
+	m.Character = t.Character
 	return m
 }
 

@@ -393,6 +393,7 @@ export interface Media {
 	seasons?: MediaSeason[];
 	isShowAnime?: boolean;
 	recommendedBy?: RecommendationSource[];
+	character?: string;
 	mangaChapters?: number;
 	mangaVolumes?: number;
 	mangaStatus?: string;

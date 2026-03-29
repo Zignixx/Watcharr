@@ -57,6 +57,7 @@
 		ownerWatched?: Watched;
 		ownerName?: string;
 		socialData?: { followedUser: { id: number; username: string }; status: WatchedStatus }[];
+		characterName?: string;
 	}
 
 	let {
@@ -76,6 +77,7 @@
 		ownerWatched = undefined,
 		ownerName = undefined,
 		socialData = undefined,
+		characterName = undefined,
 	}: Props = $props();
 
 	// If poster is active (scaled up)
@@ -436,6 +438,9 @@
 				}}
 			/>
 			<span class="type-badge">{meta?.type === "tv" ? "Show" : meta?.type === "movie" ? "Movie" : meta?.type === "game" ? "Game" : meta?.type === "manga" ? "Manga" : ""}</span>
+			{#if characterName}
+				<span class="character-badge">{characterName}</span>
+			{/if}
 			{#if socialData?.length}
 				<PosterSocialBadge {socialData} />
 			{/if}
@@ -608,7 +613,8 @@
 	li.active {
 		cursor: pointer;
 
-		.type-badge {
+		.type-badge,
+		.character-badge {
 			opacity: 0;
 		}
 	}
@@ -687,6 +693,28 @@
 			pointer-events: none;
 			z-index: 1;
 			transition: opacity 150ms ease;
+		}
+
+		.character-badge {
+			position: absolute;
+			bottom: 6px;
+			left: 6px;
+			right: 6px;
+			background: rgba(0, 0, 0, 0.7);
+			color: white;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-size: 11px;
+			font-weight: 600;
+			pointer-events: none;
+			z-index: 1;
+			transition: opacity 150ms ease;
+			text-align: center;
+			display: -webkit-box;
+			-webkit-line-clamp: 3;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
+			word-break: break-word;
 		}
 
 		&.details-shown .img-loader {

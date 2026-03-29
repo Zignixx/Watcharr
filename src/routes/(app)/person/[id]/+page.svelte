@@ -214,6 +214,7 @@
 									bind:watched={credits.credits[i].watched}
 									fluidSize
 									hideIfNotOnList={onMyListFilter}
+									characterName={c.character}
 								/>
 							{/each}
 						</PosterList>
