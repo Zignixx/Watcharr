@@ -5,6 +5,7 @@
 	import type {
 		Tier,
 		TierItem,
+		Tierlist,
 		CreateTierRequest,
 		Watched,
 		TierPreset,
@@ -24,6 +25,17 @@
 	let untieredWatched: any[] = $state([]);
 	let loading = $state(true);
 	let editMode = $state(false);
+
+	// Tierlist (collection) state
+	let tierlists: Tierlist[] = $state([]);
+	let activeTierlistId: number | null = $state(null);
+	let showCreateTierlistModal = $state(false);
+	let newTierlistName = $state("");
+	let showRenameTierlistModal = $state(false);
+	let renameTierlistName = $state("");
+
+	let activeTierlist = $derived(tierlists.find((tl) => tl.id === activeTierlistId));
+
 	let showAddTierModal = $state(false);
 	let editingTier: Tier | null = $state(null);
 	let dragItem: { watchedId: number; sourceTierId: number | null; sourceIndex: number } | null =
@@ -439,11 +451,39 @@
 		{ value: "DROPPED", label: "Dropped" },
 	];
 
-	let filteredUntiered = $derived(
-		activeStatusFilters.length === 0
-			? untieredWatched
-			: untieredWatched.filter((w: any) => activeStatusFilters.includes(w.status)),
-	);
+	// Content type filter for untiered items
+	type UntieredTypeFilter = "all" | "movie" | "show" | "anime" | "game" | "manga";
+	let activeTypeFilter: UntieredTypeFilter = $state("all");
+
+	const typeFilterLabels: { value: UntieredTypeFilter; label: string }[] = [
+		{ value: "all", label: "All" },
+		{ value: "movie", label: "Movies" },
+		{ value: "show", label: "Shows" },
+		{ value: "anime", label: "Anime" },
+		{ value: "game", label: "Games" },
+		{ value: "manga", label: "Manga" },
+	];
+
+	function getUntieredItemType(w: any): UntieredTypeFilter {
+		if (w.content) {
+			if (w.content.type === "tv" && w.content.isAnime) return "anime";
+			return w.content.type === "movie" ? "movie" : "show";
+		}
+		if (w.game) return "game";
+		if (w.manga) return "manga";
+		return "movie";
+	}
+
+	let filteredUntiered = $derived.by(() => {
+		let items = untieredWatched;
+		if (activeTypeFilter !== "all") {
+			items = items.filter((w: any) => getUntieredItemType(w) === activeTypeFilter);
+		}
+		if (activeStatusFilters.length > 0) {
+			items = items.filter((w: any) => activeStatusFilters.includes(w.status));
+		}
+		return items;
+	});
 
 	async function exportTierlist() {
 		if (!tierlistContainer || exporting) return;
@@ -489,7 +529,7 @@
 				font-weight: 700;
 				letter-spacing: -0.3px;
 			`;
-			title.textContent = `Tierlist from ${username}`;
+			title.textContent = `${activeTierlist?.name || 'Tierlist'} from ${username}`;
 
 			const date = document.createElement("div");
 			date.style.cssText = `
@@ -665,7 +705,8 @@
 	let newTierTextColor = $state("#000000");
 
 	onMount(async () => {
-		await Promise.all([loadTierlist(), loadUserPresets()]);
+		await loadTierlists();
+		await loadUserPresets();
 	});
 
 	// Equalize all tier label widths to the widest one
@@ -746,19 +787,41 @@
 		});
 	}
 
+	async function loadTierlists() {
+		loading = true;
+		try {
+			const resp = await axios.get("/tierlist/lists");
+			tierlists = resp.data || [];
+			if (tierlists.length === 0) {
+				// Create a default tierlist
+				const createResp = await axios.post("/tierlist/list", { name: "Tierlist" });
+				tierlists = [createResp.data];
+			}
+			// Select first tierlist if none active
+			if (!activeTierlistId || !tierlists.find((tl) => tl.id === activeTierlistId)) {
+				activeTierlistId = tierlists[0].id;
+			}
+			await loadTierlist();
+		} catch (err) {
+			console.error("Failed to load tierlists:", err);
+			notify({ text: "Failed to load tierlists", type: "error" });
+			loading = false;
+		}
+	}
+
 	async function loadTierlist() {
 		loading = true;
 		try {
 			const [tiersResp, untieredResp] = await Promise.all([
-				axios.get("/tierlist"),
-				axios.get("/tierlist/untiered"),
+				axios.get(`/tierlist?listId=${activeTierlistId}`),
+				axios.get(`/tierlist/untiered?listId=${activeTierlistId}`),
 			]);
 			tiers = tiersResp.data || [];
 			untieredWatched = untieredResp.data || [];
 
 			// If no tiers exist, create defaults
 			if (tiers.length === 0) {
-				const defaultResp = await axios.post("/tierlist/defaults");
+				const defaultResp = await axios.post(`/tierlist/defaults?listId=${activeTierlistId}`);
 				tiers = defaultResp.data || [];
 			}
 		} catch (err) {
@@ -766,6 +829,62 @@
 			notify({ text: "Failed to load tierlist", type: "error" });
 		}
 		loading = false;
+	}
+
+	async function switchTierlist(id: number) {
+		if (id === activeTierlistId) return;
+		activeTierlistId = id;
+		editMode = false;
+		await loadTierlist();
+	}
+
+	async function createTierlist() {
+		if (!newTierlistName.trim()) return;
+		const nid = notify({ text: "Creating tierlist...", type: "loading" });
+		try {
+			const resp = await axios.post("/tierlist/list", { name: newTierlistName.trim() });
+			tierlists = [...tierlists, resp.data];
+			activeTierlistId = resp.data.id;
+			showCreateTierlistModal = false;
+			newTierlistName = "";
+			notify({ id: nid, text: "Tierlist created!", type: "success" });
+			await loadTierlist();
+		} catch (err) {
+			console.error("Failed to create tierlist:", err);
+			notify({ id: nid, text: "Failed to create tierlist", type: "error" });
+		}
+	}
+
+	async function renameTierlist() {
+		if (!activeTierlistId || !renameTierlistName.trim()) return;
+		const nid = notify({ text: "Renaming...", type: "loading" });
+		try {
+			await axios.put(`/tierlist/list/${activeTierlistId}`, { name: renameTierlistName.trim() });
+			tierlists = tierlists.map((tl) =>
+				tl.id === activeTierlistId ? { ...tl, name: renameTierlistName.trim() } : tl,
+			);
+			showRenameTierlistModal = false;
+			renameTierlistName = "";
+			notify({ id: nid, text: "Tierlist renamed!", type: "success" });
+		} catch (err) {
+			console.error("Failed to rename tierlist:", err);
+			notify({ id: nid, text: "Failed to rename tierlist", type: "error" });
+		}
+	}
+
+	async function deleteTierlist() {
+		if (!activeTierlistId || tierlists.length <= 1) return;
+		const nid = notify({ text: "Deleting tierlist...", type: "loading" });
+		try {
+			await axios.delete(`/tierlist/list/${activeTierlistId}`);
+			tierlists = tierlists.filter((tl) => tl.id !== activeTierlistId);
+			activeTierlistId = tierlists[0]?.id ?? null;
+			notify({ id: nid, text: "Tierlist deleted!", type: "success" });
+			if (activeTierlistId) await loadTierlist();
+		} catch (err) {
+			console.error("Failed to delete tierlist:", err);
+			notify({ id: nid, text: "Failed to delete tierlist", type: "error" });
+		}
 	}
 
 	function getItemPoster(item: any): string | undefined {
@@ -780,6 +899,12 @@
 		if (w.game?.coverId) {
 			return `https://images.igdb.com/igdb/image/upload/t_cover_big/${w.game.coverId}.jpg`;
 		}
+		if (w.manga?.poster?.path) {
+			return `${baseURL}/${w.manga.poster.path}`;
+		}
+		if (w.manga?.posterUrl) {
+			return w.manga.posterUrl;
+		}
 		return undefined;
 	}
 
@@ -787,6 +912,7 @@
 		const w = item.watched || item;
 		if (w.content?.title) return w.content.title;
 		if (w.game?.name) return w.game.name;
+		if (w.manga?.title) return w.manga.title;
 		return "Unknown";
 	}
 
@@ -797,6 +923,9 @@
 		}
 		if (w.game) {
 			return `/game/${w.game.igdbId}`;
+		}
+		if (w.manga) {
+			return `/manga/${w.manga.malId}`;
 		}
 		return undefined;
 	}
@@ -1196,7 +1325,7 @@
 			}
 			await axios.put("/tierlist/items", { items });
 			// Also sync ratings for backwards compatibility
-			await axios.post("/tierlist/sync-ratings");
+			await axios.post(`/tierlist/sync-ratings?listId=${activeTierlistId}`);
 			notify({ id: nid, text: "Tierlist saved!", type: "success" });
 		} catch (err) {
 			console.error("Failed to save tierlist:", err);
@@ -1213,7 +1342,7 @@
 			textColor: newTierTextColor,
 		};
 		try {
-			const resp = await axios.post("/tierlist/tier", req);
+			const resp = await axios.post("/tierlist/tier", { ...req, tierlistId: activeTierlistId });
 			tiers = [...tiers, { ...resp.data, tierItems: [] }];
 			showAddTierModal = false;
 			newTierName = "";
@@ -1298,7 +1427,32 @@
 
 <div class="tierlist-page" class:edit-mode={editMode}>
 	<div class="tierlist-header">
-		<h2>Tierlist</h2>
+		<div class="tierlist-selector">
+			{#each tierlists as tl (tl.id)}
+				<button
+					class="tls-tab"
+					class:active={activeTierlistId === tl.id}
+					onclick={() => switchTierlist(tl.id)}
+				>
+					{tl.name}
+				</button>
+			{/each}
+			<div class="tls-actions">
+				<button class="tls-icon" onclick={() => { newTierlistName = ''; showCreateTierlistModal = true; }} title="New Tierlist">
+					+
+				</button>
+				{#if activeTierlist}
+					<button class="tls-icon" onclick={() => { renameTierlistName = activeTierlist.name; showRenameTierlistModal = true; }} title="Rename">
+						<Icon i="pencil" wh={12} />
+					</button>
+					{#if tierlists.length > 1}
+						<button class="tls-icon tls-icon-delete" onclick={deleteTierlist} title="Delete">
+							<Icon i="trash" wh={12} />
+						</button>
+					{/if}
+				{/if}
+			</div>
+		</div>
 		<div class="tierlist-actions">
 			{#if editMode}
 				<button class="btn-save" onclick={saveChanges} disabled={saving}>
@@ -1448,17 +1602,31 @@
 		{#if editMode}
 			<div class="untiered-section" class:collapsed={!overlayExpanded} class:dragging={dragItem !== null}>
 				<div class="untiered-header">
-					<h3>Untiered ({untieredWatched.length})</h3>
+					<h3>Untiered ({filteredUntiered.length}/{untieredWatched.length})</h3>
 					<div class="untiered-filters">
-						{#each statusLabels as sl}
-							<button
-								class="filter-chip"
-								class:active={activeStatusFilters.includes(sl.value)}
-								onclick={() => toggleStatusFilter(sl.value)}
-							>
-								{sl.label}
-							</button>
-						{/each}
+						<div class="filter-group">
+							{#each typeFilterLabels as tl}
+								<button
+									class="filter-chip"
+									class:active={activeTypeFilter === tl.value}
+									onclick={() => (activeTypeFilter = tl.value)}
+								>
+									{tl.label}
+								</button>
+							{/each}
+						</div>
+						<span class="filter-sep">|</span>
+						<div class="filter-group">
+							{#each statusLabels as sl}
+								<button
+									class="filter-chip"
+									class:active={activeStatusFilters.includes(sl.value)}
+									onclick={() => toggleStatusFilter(sl.value)}
+								>
+									{sl.label}
+								</button>
+							{/each}
+						</div>
 					</div>
 					<button class="overlay-toggle" title={overlayExpanded ? "Collapse" : "Expand"} onclick={() => (overlayExpanded = !overlayExpanded)}>
 						<Icon i="chevron" wh={14} facing={overlayExpanded ? "down" : "up"} />
@@ -1522,6 +1690,30 @@
 </div>
 
 <!-- Add Tier Modal -->
+{#if showCreateTierlistModal}
+	<Modal title="New Tierlist" onClose={() => (showCreateTierlistModal = false)}>
+		<div class="tier-form">
+			<label>
+				Name
+				<input type="text" bind:value={newTierlistName} placeholder="e.g. Anime Tierlist" />
+			</label>
+			<button onclick={createTierlist}>Create</button>
+		</div>
+	</Modal>
+{/if}
+
+{#if showRenameTierlistModal}
+	<Modal title="Rename Tierlist" onClose={() => (showRenameTierlistModal = false)}>
+		<div class="tier-form">
+			<label>
+				Name
+				<input type="text" bind:value={renameTierlistName} placeholder="Tierlist name" />
+			</label>
+			<button onclick={renameTierlist}>Save</button>
+		</div>
+	</Modal>
+{/if}
+
 {#if showAddTierModal}
 	<Modal title="Add Tier" onClose={() => (showAddTierModal = false)}>
 		<div class="tier-form">
@@ -1759,6 +1951,8 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 24px;
+		flex-wrap: wrap;
+		gap: 12px;
 
 		h2 {
 			margin: 0;
@@ -1766,6 +1960,76 @@
 			font-weight: 700;
 			letter-spacing: -0.3px;
 		}
+	}
+
+	.tierlist-selector {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.tls-tab {
+		width: auto !important;
+		padding: 5px 14px;
+		border-radius: 8px;
+		border: 1.5px solid rgba(128, 128, 128, 0.2);
+		background: rgba(128, 128, 128, 0.06);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 500;
+		transition: all 160ms ease;
+		white-space: nowrap;
+
+		&:hover {
+			background: rgba(128, 128, 128, 0.16);
+		}
+
+		&.active {
+			background: rgba(255, 255, 255, 0.1);
+			border-color: rgba(255, 255, 255, 0.35);
+			font-weight: 600;
+		}
+	}
+
+	.tls-actions {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		margin-left: 2px;
+	}
+
+	.tls-icon {
+		width: auto !important;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px 6px;
+		border-radius: 6px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: $text-color;
+		fill: $text-color;
+		cursor: pointer;
+		opacity: 0.4;
+		transition: all 160ms ease;
+		font-size: 15px;
+		font-weight: 700;
+		line-height: 1;
+
+		&:hover {
+			opacity: 1;
+			background: rgba(128, 128, 128, 0.12);
+			border-color: rgba(128, 128, 128, 0.2);
+		}
+	}
+
+	.tls-icon-delete:hover {
+		background: rgba(255, 70, 70, 0.12);
+		border-color: rgba(255, 70, 70, 0.3);
+		color: #ff5050;
+		fill: #ff5050;
 	}
 
 	.tierlist-actions {
@@ -2097,9 +2361,24 @@
 		align-items: center;
 		gap: 6px;
 		flex: 1;
+		flex-wrap: wrap;
+	}
+
+	.filter-group {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+
+	.filter-sep {
+		opacity: 0.2;
+		font-size: 14px;
+		user-select: none;
 	}
 
 	.filter-chip {
+		width: auto !important;
 		padding: 3px 10px;
 		border-radius: 12px;
 		border: 1px solid rgba(128, 128, 128, 0.25);
@@ -2137,7 +2416,7 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		width: 32px;
+		width: 32px !important;
 		height: 32px;
 		border-radius: 6px;
 		margin-left: auto;
@@ -2611,6 +2890,20 @@
 			h2 {
 				font-size: 20px;
 			}
+		}
+
+		.tierlist-selector {
+			gap: 4px;
+		}
+
+		.tls-tab {
+			padding: 4px 10px;
+			font-size: 11px;
+		}
+
+		.tls-icon {
+			padding: 3px 5px;
+			font-size: 13px;
 		}
 
 		.tierlist-actions {

@@ -251,10 +251,19 @@ export enum RatingStep {
 	Point1,
 }
 
+export interface Tierlist {
+	id: number;
+	createdAt: string;
+	updatedAt: string;
+	name: string;
+	position: number;
+}
+
 export interface Tier {
 	id: number;
 	createdAt: string;
 	updatedAt: string;
+	tierlistId?: number;
 	name: string;
 	color: string;
 	textColor: string;
@@ -462,6 +471,7 @@ export enum SearchType {
 	person = "person",
 	game = "game",
 	manga = "manga",
+	anime = "anime",
 }
 
 export interface SearchRequest extends PaginationParams {

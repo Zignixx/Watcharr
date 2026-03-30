@@ -112,6 +112,8 @@ func (s *Service) Discover(
 		return s.DiscoverGame(r, meta)
 	case domain.SearchTypeManga:
 		return s.DiscoverManga(r, meta)
+	case domain.SearchTypeAnime:
+		return s.DiscoverAnime(r, meta)
 	}
 	return resp, nil
 }
@@ -180,6 +182,27 @@ func (s *Service) DiscoverTv(
 		err = s.discoverRecommended("tv", meta, &resp)
 	default:
 		slog.Error("DiscoverTv: Unsupported filter.")
+		return resp, errors.New("unsupported filter")
+	}
+	return resp, err
+}
+
+// Discover anime (TV shows with anime keyword).
+func (s *Service) DiscoverAnime(
+	r domain.DiscoverRequest,
+	meta domain.DiscoverRequestMeta,
+) (domain.DiscoverResponse, error) {
+	resp := domain.DiscoverResponse{}
+	var err error
+	switch r.Filter {
+	case domain.DiscoverFilterTrending:
+		err = s.discoverAnimeTrending(meta, &resp)
+	case domain.DiscoverFilterUpcoming:
+		err = s.discoverAnimeUpcoming(meta, &resp)
+	case domain.DiscoverFilterPopular:
+		err = s.discoverAnimePopular(meta, &resp)
+	default:
+		slog.Error("DiscoverAnime: Unsupported filter.")
 		return resp, errors.New("unsupported filter")
 	}
 	return resp, err
@@ -398,6 +421,83 @@ func (s *Service) discoverTvPopular(
 			resp.Results,
 			v.AsMedia(),
 		)
+	}
+	resp.Page = tmdbRes.Page
+	resp.TotalPages = tmdbRes.TotalPages
+	resp.TotalResults = int64(tmdbRes.TotalResults)
+	return nil
+}
+
+// animeKeyword is the TMDB keyword ID for "anime".
+const animeKeyword = "210024"
+
+func (s *Service) discoverAnimeTrending(
+	meta domain.DiscoverRequestMeta,
+	resp *domain.DiscoverResponse,
+) error {
+	tmdbRes, err := s.contentProvider.DiscoverTv(
+		tmdb.DiscoverOptions{
+			WithKeywords: animeKeyword,
+		},
+		meta.PageParams.Page,
+		meta.Region,
+	)
+	if err != nil {
+		slog.Error("discoverAnimeTrending: Failed to search tmdb!", "error", err)
+		return errors.New("content request failed")
+	}
+	for _, v := range tmdbRes.Results {
+		resp.Results = append(resp.Results, v.AsMedia())
+	}
+	resp.Page = tmdbRes.Page
+	resp.TotalPages = tmdbRes.TotalPages
+	resp.TotalResults = int64(tmdbRes.TotalResults)
+	return nil
+}
+
+func (s *Service) discoverAnimeUpcoming(
+	meta domain.DiscoverRequestMeta,
+	resp *domain.DiscoverResponse,
+) error {
+	tmdbRes, err := s.contentProvider.DiscoverTv(
+		tmdb.DiscoverOptions{
+			ReleaseDateMin: time.Now(),
+			ReleaseDateMax: time.Now().AddDate(0, 1, 0),
+			WithKeywords:   animeKeyword,
+		},
+		meta.PageParams.Page,
+		meta.Region,
+	)
+	if err != nil {
+		slog.Error("discoverAnimeUpcoming: Failed to search tmdb!", "error", err)
+		return errors.New("content request failed")
+	}
+	for _, v := range tmdbRes.Results {
+		resp.Results = append(resp.Results, v.AsMedia())
+	}
+	resp.Page = tmdbRes.Page
+	resp.TotalPages = tmdbRes.TotalPages
+	resp.TotalResults = int64(tmdbRes.TotalResults)
+	return nil
+}
+
+func (s *Service) discoverAnimePopular(
+	meta domain.DiscoverRequestMeta,
+	resp *domain.DiscoverResponse,
+) error {
+	tmdbRes, err := s.contentProvider.DiscoverTv(
+		tmdb.DiscoverOptions{
+			WithKeywords: animeKeyword,
+		},
+		meta.PageParams.Page,
+		meta.Region,
+	)
+	if err != nil {
+		slog.Error("discoverAnimePopular: Failed to search tmdb!", "error", err)
+		return errors.New("content request failed")
+	}
+	for _, v := range tmdbRes.Results {
+		resp.Results = append(resp.Results, v.AsMedia())
 	}
 	resp.Page = tmdbRes.Page
 	resp.TotalPages = tmdbRes.TotalPages

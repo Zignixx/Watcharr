@@ -5,7 +5,7 @@
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
-	import type { Media, MediaTypeE, PublicUser, Watched, Tier, SupportedMedia } from "@/types.js";
+	import type { Media, MediaTypeE, PublicUser, Watched, Tier, Tierlist, SupportedMedia } from "@/types.js";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { publicAxios, getToken } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
@@ -33,6 +33,9 @@
 	let followBtnDisabled = $state(false);
 	let user: PublicUser | undefined = $state();
 	let activeTab: "list" | "tierlist" = $state("list");
+	let publicTierlists: Tierlist[] = $state([]);
+	let activePublicTierlistId: number = $state(0);
+	let activePublicTierlist = $derived(publicTierlists.find((t) => t.id === activePublicTierlistId));
 	let publicTiers: Tier[] = $state([]);
 	let tiersLoading = $state(false);
 	let tiersError = $state(false);
@@ -73,18 +76,38 @@
 		}
 	}
 
+	async function loadPublicTierlists() {
+		if (!meta.id || !meta.username) return;
+		try {
+			const resp = await publicAxios.get(`/tierlist/${meta.id}/${meta.username}/lists`);
+			publicTierlists = resp.data || [];
+			if (publicTierlists.length > 0 && !publicTierlists.find((t) => t.id === activePublicTierlistId)) {
+				activePublicTierlistId = publicTierlists[0].id;
+			}
+		} catch {
+			publicTierlists = [];
+		}
+	}
+
 	async function loadPublicTierlist() {
 		if (!meta.id || !meta.username) return;
 		tiersLoading = true;
 		tiersError = false;
 		try {
-			const resp = await publicAxios.get(`/tierlist/${meta.id}/${meta.username}`);
+			const resp = await publicAxios.get(`/tierlist/${meta.id}/${meta.username}`, {
+				params: activePublicTierlistId ? { listId: activePublicTierlistId } : {},
+			});
 			publicTiers = resp.data || [];
 		} catch {
 			publicTiers = [];
 			tiersError = true;
 		}
 		tiersLoading = false;
+	}
+
+	async function switchPublicTierlist(id: number) {
+		activePublicTierlistId = id;
+		await loadPublicTierlist();
 	}
 
 	function getTierItemPoster(item: any): string | undefined {
@@ -262,7 +285,7 @@
 					console.error("getPublicUser failed!", err);
 				});
 			loadMyWatchedData();
-			loadPublicTierlist();
+			loadPublicTierlists().then(() => loadPublicTierlist());
 		}
 	});
 
@@ -321,7 +344,7 @@
 	</div>
 </div>
 
-{#if publicTiers.length > 0 || !tiersError}
+{#if publicTierlists.length > 0 || publicTiers.length > 0 || !tiersError}
 	<div class="view-tabs">
 		<button
 			class="view-tab"
@@ -343,6 +366,19 @@
 {/if}
 
 {#if activeTab === "tierlist"}
+	{#if publicTierlists.length > 1}
+		<div class="public-tierlist-selector">
+			{#each publicTierlists as tl (tl.id)}
+				<button
+					class="public-tierlist-tab"
+					class:active={activePublicTierlistId === tl.id}
+					onclick={() => switchPublicTierlist(tl.id)}
+				>
+					{tl.name}
+				</button>
+			{/each}
+		</div>
+	{/if}
 	{#if tiersLoading}
 		<Spinner />
 	{:else if publicTiers.length > 0}
@@ -589,6 +625,39 @@
 			opacity: 1;
 			border-color: $accent-color;
 			background: rgba($accent-color, 0.1);
+		}
+	}
+
+	.public-tierlist-selector {
+		display: flex;
+		justify-content: center;
+		gap: 4px;
+		margin: 0 20px 16px;
+		flex-wrap: wrap;
+	}
+
+	.public-tierlist-tab {
+		padding: 5px 14px;
+		border-radius: 8px;
+		border: 1.5px solid rgba(128, 128, 128, 0.2);
+		background: rgba(128, 128, 128, 0.05);
+		color: $text-color;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 500;
+		transition: all 180ms ease;
+		opacity: 0.6;
+
+		&:hover {
+			opacity: 0.85;
+			background: rgba(128, 128, 128, 0.1);
+		}
+
+		&.active {
+			opacity: 1;
+			border-color: rgba(255, 255, 255, 0.35);
+			background: rgba(255, 255, 255, 0.12);
+			font-weight: 600;
 		}
 	}
 

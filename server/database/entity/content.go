@@ -34,6 +34,7 @@ type Content struct {
 	Runtime          uint32      `json:"runtime"`
 	NumberOfEpisodes uint32      `json:"numberOfEpisodes"`
 	NumberOfSeasons  uint32      `json:"numberOfSeasons"`
+	IsAnime          bool        `json:"isAnime"`
 }
 
 // NOTE: Can return empty string, so use only when we know that a valid option

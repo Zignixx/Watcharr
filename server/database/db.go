@@ -37,6 +37,7 @@ func New() (*gorm.DB, error) {
 		&entity.Tag{},
 		&entity.Tier{},
 		&entity.TierItem{},
+		&entity.Tierlist{},
 		&entity.TierPreset{},
 		&entity.TierPresetEntry{},
 		&entity.GameScore{},

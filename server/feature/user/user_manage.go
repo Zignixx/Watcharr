@@ -100,6 +100,7 @@ func (s *ManageService) Delete(userId uint) error {
 		{&entity.Tag{}, "tags"},
 		{&entity.Tier{}, "tiers"},
 		{&entity.TierItem{}, "tier items"},
+		{&entity.Tierlist{}, "tierlists"},
 		{&entity.Activity{}, "activities"},
 		{&entity.Follow{}, "follows"},
 	}

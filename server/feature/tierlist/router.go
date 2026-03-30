@@ -19,12 +19,17 @@ func NewRouter(br *router.BaseRouter, service *Service) *Router {
 }
 
 func (r *Router) AddRoutes() {
-	// Public route (no auth required)
+	// Public routes (no auth required)
 	tlPublic := r.br.Router.Group("/tierlist")
 	tlPublic.GET("/:id/:username", r.GetPublicTierlist)
+	tlPublic.GET("/:id/:username/lists", r.GetPublicTierlists)
 
 	tl := r.br.Router.Group("/tierlist").Use(authmiddleware.AuthRequired(nil, r.br.Cfg))
 	tl.GET("", r.GetTierlist)
+	tl.GET("/lists", r.GetAllTierlists)
+	tl.POST("/list", r.CreateTierlist)
+	tl.PUT("/list/:id", r.UpdateTierlist)
+	tl.DELETE("/list/:id", r.DeleteTierlist)
 	tl.POST("/tier", r.CreateTier)
 	tl.PUT("/tier/:id", r.UpdateTier)
 	tl.DELETE("/tier/:id", r.DeleteTier)
@@ -38,9 +43,100 @@ func (r *Router) AddRoutes() {
 	tl.DELETE("/preset/:id", r.DeletePreset)
 }
 
+func (r *Router) getListIDParam(c *gin.Context) uint {
+	if v := c.Query("listId"); v != "" {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return uint(id)
+		}
+	}
+	return 0
+}
+
+// ==================== Tierlist CRUD ====================
+
+func (r *Router) GetAllTierlists(c *gin.Context) {
+	userID := c.MustGet("userId").(uint)
+	lists, err := r.s.GetTierlists(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to get tierlists"})
+		return
+	}
+	c.JSON(http.StatusOK, lists)
+}
+
+func (r *Router) CreateTierlist(c *gin.Context) {
+	userID := c.MustGet("userId").(uint)
+	var req CreateTierlistRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid request"})
+		return
+	}
+	tl, err := r.s.CreateTierlist(userID, req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to create tierlist"})
+		return
+	}
+	c.JSON(http.StatusOK, tl)
+}
+
+func (r *Router) UpdateTierlist(c *gin.Context) {
+	userID := c.MustGet("userId").(uint)
+	tlID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid tierlist id"})
+		return
+	}
+	var req UpdateTierlistRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid request"})
+		return
+	}
+	if err := r.s.UpdateTierlist(userID, uint(tlID), req); err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to update tierlist"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (r *Router) DeleteTierlist(c *gin.Context) {
+	userID := c.MustGet("userId").(uint)
+	tlID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid tierlist id"})
+		return
+	}
+	if err := r.s.DeleteTierlist(userID, uint(tlID)); err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to delete tierlist"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (r *Router) GetPublicTierlists(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid user id"})
+		return
+	}
+	username := c.Param("username")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "username required"})
+		return
+	}
+	lists, err := r.s.GetPublicTierlists(uint(userID), username)
+	if err != nil {
+		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, lists)
+}
+
+// ==================== Tier CRUD ====================
+
 func (r *Router) GetTierlist(c *gin.Context) {
 	userID := c.MustGet("userId").(uint)
-	tiers, err := r.s.GetTiers(userID)
+	listID := r.getListIDParam(c)
+	tiers, err := r.s.GetTiers(userID, listID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to get tierlist"})
 		return
@@ -126,7 +222,8 @@ func (r *Router) UpdateTierItems(c *gin.Context) {
 
 func (r *Router) SyncRatings(c *gin.Context) {
 	userID := c.MustGet("userId").(uint)
-	if err := r.s.SyncRatings(userID); err != nil {
+	listID := r.getListIDParam(c)
+	if err := r.s.SyncRatings(userID, listID); err != nil {
 		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to sync ratings"})
 		return
 	}
@@ -135,7 +232,8 @@ func (r *Router) SyncRatings(c *gin.Context) {
 
 func (r *Router) CreateDefaultTiers(c *gin.Context) {
 	userID := c.MustGet("userId").(uint)
-	tiers, err := r.s.CreateDefaultTiers(userID)
+	listID := r.getListIDParam(c)
+	tiers, err := r.s.CreateDefaultTiers(userID, listID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to create default tiers"})
 		return
@@ -145,7 +243,8 @@ func (r *Router) CreateDefaultTiers(c *gin.Context) {
 
 func (r *Router) GetUntieredWatched(c *gin.Context) {
 	userID := c.MustGet("userId").(uint)
-	watched, err := r.s.GetUntieredWatched(userID)
+	listID := r.getListIDParam(c)
+	watched, err := r.s.GetUntieredWatched(userID, listID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to get untiered watched"})
 		return
@@ -202,7 +301,8 @@ func (r *Router) GetPublicTierlist(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "username required"})
 		return
 	}
-	tiers, err := r.s.GetPublicTiers(uint(userID), username)
+	listID := r.getListIDParam(c)
+	tiers, err := r.s.GetPublicTiers(uint(userID), username, listID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
 		return

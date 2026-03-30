@@ -2,10 +2,19 @@ package tierlist
 
 // Request types for tierlist API
 
+type CreateTierlistRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type UpdateTierlistRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
 type CreateTierRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Color     string `json:"color" binding:"required"`
-	TextColor string `json:"textColor" binding:"required"`
+	TierlistID uint   `json:"tierlistId"`
+	Name       string `json:"name" binding:"required"`
+	Color      string `json:"color" binding:"required"`
+	TextColor  string `json:"textColor" binding:"required"`
 }
 
 type UpdateTierRequest struct {

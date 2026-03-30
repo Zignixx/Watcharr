@@ -68,6 +68,9 @@
 			case SearchType.show:
 				o.push(dropDownOptions.popular, dropDownOptions.upcoming);
 				break;
+			case SearchType.anime:
+				o.push(dropDownOptions.popular, dropDownOptions.upcoming);
+				break;
 			case SearchType.person:
 				o.push(dropDownOptions.popular);
 				break;

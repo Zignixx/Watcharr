@@ -95,10 +95,47 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB, tmdb *tmdb.TMDB) *Service {
-	return &Service{
+	s := &Service{
 		db,
 		tmdb,
 	}
+	go s.migrateAnimeFlags()
+	return s
+}
+
+// migrateAnimeFlags checks existing TV content for anime keyword and sets IsAnime.
+// Only runs once — creates a marker file after completion.
+func (s *Service) migrateAnimeFlags() {
+	markerPath := path.Join(config.DataPath, ".anime_migration_done")
+	if _, err := os.Stat(markerPath); err == nil {
+		return // Already migrated
+	}
+	var contents []entity.Content
+	s.db.Where("type = ?", entity.SHOW).Find(&contents)
+	if len(contents) == 0 {
+		os.WriteFile(markerPath, []byte("done"), 0644)
+		return
+	}
+	slog.Info("migrateAnimeFlags: Checking existing TV content for anime keyword", "count", len(contents))
+	for _, c := range contents {
+		resp := new(tmdb.TMDBShowDetails)
+		err := s.tmdb.Request("/tv/"+strconv.Itoa(c.TmdbID), map[string]string{"append_to_response": "keywords"}, &resp)
+		if err != nil {
+			slog.Error("migrateAnimeFlags: Failed to fetch show details", "tmdbId", c.TmdbID, "error", err)
+			continue
+		}
+		for _, v := range resp.Keywords.Results {
+			if v.ID == 210024 {
+				s.db.Model(&entity.Content{}).Where("id = ?", c.ID).Update("is_anime", true)
+				slog.Info("migrateAnimeFlags: Marked content as anime", "tmdbId", c.TmdbID, "title", c.Title)
+				break
+			}
+		}
+		// Small delay to respect TMDB rate limits
+		time.Sleep(100 * time.Millisecond)
+	}
+	os.WriteFile(markerPath, []byte("done"), 0644)
+	slog.Info("migrateAnimeFlags: Migration complete")
 }
 
 // onlyUpdate - If we should only update existing row if exists, or false to create/update if not exist.
@@ -135,6 +172,7 @@ func (s *Service) saveContent(c *entity.Content, onlyUpdate bool) error {
 				"runtime",
 				"number_of_episodes",
 				"number_of_seasons",
+				"is_anime",
 			}),
 		}).Create(&c)
 		if res.Error != nil {
@@ -175,6 +213,15 @@ func (s *Service) cacheContentTv(content tmdb.TMDBShowDetails, onlyUpdate bool) 
 		runtime = uint32(content.EpisodeRunTime[0])
 	}
 
+	// Check if show is anime based on keywords
+	isAnime := false
+	for _, v := range content.Keywords.Results {
+		if v.ID == 210024 {
+			isAnime = true
+			break
+		}
+	}
+
 	c := entity.Content{
 		TmdbID:           content.ID,
 		Title:            content.Name,
@@ -189,6 +236,7 @@ func (s *Service) cacheContentTv(content tmdb.TMDBShowDetails, onlyUpdate bool) 
 		Runtime:          runtime,
 		NumberOfEpisodes: content.NumberOfEpisodes,
 		NumberOfSeasons:  content.NumberOfSeasons,
+		IsAnime:          isAnime,
 	}
 
 	err = s.saveContent(&c, onlyUpdate)
@@ -246,7 +294,11 @@ func (s *Service) GetOrCacheContent(contentType entity.ContentType, tmdbId int) 
 	if content == (entity.Content{}) {
 		slog.Debug("Content not in db, fetching...", "type", contentType, "tmdbId", tmdbId)
 
-		resp, err := s.tmdb.APIRequest("/"+string(contentType)+"/"+strconv.Itoa(tmdbId), map[string]string{})
+		params := map[string]string{}
+		if contentType == entity.SHOW {
+			params["append_to_response"] = "keywords"
+		}
+		resp, err := s.tmdb.APIRequest("/"+string(contentType)+"/"+strconv.Itoa(tmdbId), params)
 		if err != nil {
 			slog.Error("GetOrCacheContent: content tmdb api request failed", "error", err)
 			return entity.Content{}, errors.New("failed to find requested media")
@@ -620,6 +672,9 @@ func (s *Service) applyDiscoverOptionsToMap(
 	}
 	if o.WithReleaseType != "" {
 		m[withReleaseTypeKey] = o.WithReleaseType
+	}
+	if o.WithKeywords != "" {
+		m["with_keywords"] = o.WithKeywords
 	}
 }
 

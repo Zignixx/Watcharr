@@ -20,6 +20,8 @@ const (
 	SearchTypeGame SearchType = "game"
 	// Search for a **manga**.
 	SearchTypeManga SearchType = "manga"
+	// Search for **anime** (TV shows with anime keyword).
+	SearchTypeAnime SearchType = "anime"
 )
 
 type SearchRequest struct {
@@ -51,7 +53,8 @@ var ValidSearchType validator.Func = func(fl validator.FieldLevel) bool {
 			SearchTypeShow,
 			SearchTypePerson,
 			SearchTypeGame,
-			SearchTypeManga:
+			SearchTypeManga,
+			SearchTypeAnime:
 			return true
 		}
 	}

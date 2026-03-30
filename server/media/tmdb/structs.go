@@ -886,6 +886,8 @@ type DiscoverOptions struct {
 	// Release types are listed on this page:
 	// https://developer.themoviedb.org/reference/movie-release-dates
 	WithReleaseType string
+	// With keywords (comma separated TMDB keyword IDs).
+	WithKeywords string
 }
 
 //

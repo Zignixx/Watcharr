@@ -13,13 +13,146 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	s := &Service{db: db}
+	s.migrateExistingTiers()
+	return s
 }
 
-// GetTiers returns all tiers with their items for a user, ordered by position.
-func (s *Service) GetTiers(userID uint) ([]entity.Tier, error) {
-	var tiers []entity.Tier
+// migrateExistingTiers creates a default Tierlist for users who have tiers without a tierlist_id.
+func (s *Service) migrateExistingTiers() {
+	// Find distinct user IDs that have tiers with tierlist_id = 0
+	var userIDs []uint
+	s.db.Model(&entity.Tier{}).
+		Where("tierlist_id = 0 OR tierlist_id IS NULL").
+		Distinct("user_id").
+		Pluck("user_id", &userIDs)
+
+	for _, uid := range userIDs {
+		slog.Info("migrateExistingTiers: Creating default tierlist for user", "userId", uid)
+		tl := entity.Tierlist{
+			UserID:   uid,
+			Name:     "Tierlist",
+			Position: 0,
+		}
+		if err := s.db.Create(&tl).Error; err != nil {
+			slog.Error("migrateExistingTiers: Failed to create tierlist", "userId", uid, "error", err)
+			continue
+		}
+		// Update all orphan tiers for this user to belong to the new tierlist
+		s.db.Model(&entity.Tier{}).
+			Where("user_id = ? AND (tierlist_id = 0 OR tierlist_id IS NULL)", uid).
+			Update("tierlist_id", tl.ID)
+	}
+}
+
+// ==================== Tierlist CRUD ====================
+
+// GetTierlists returns all tierlists for a user, ordered by position.
+func (s *Service) GetTierlists(userID uint) ([]entity.Tierlist, error) {
+	var lists []entity.Tierlist
 	err := s.db.Where("user_id = ?", userID).
+		Order("position ASC").
+		Find(&lists).Error
+	return lists, err
+}
+
+// GetPublicTierlists returns a public user's tierlists (checks privacy).
+func (s *Service) GetPublicTierlists(userID uint, username string) ([]entity.Tierlist, error) {
+	user := new(entity.User)
+	res := s.db.Where("id = ? AND username = ?", userID, username).Take(&user)
+	if res.Error != nil {
+		return nil, errors.New("failed to find user")
+	}
+	if user.Private != nil && *user.Private {
+		return nil, errors.New("this user's list is private")
+	}
+	var lists []entity.Tierlist
+	err := s.db.Where("user_id = ?", userID).
+		Order("position ASC").
+		Find(&lists).Error
+	return lists, err
+}
+
+// CreateTierlist creates a new tierlist for a user.
+func (s *Service) CreateTierlist(userID uint, req CreateTierlistRequest) (*entity.Tierlist, error) {
+	var maxPos int
+	s.db.Model(&entity.Tierlist{}).Where("user_id = ?", userID).
+		Select("COALESCE(MAX(position), -1)").Scan(&maxPos)
+
+	tl := entity.Tierlist{
+		UserID:   userID,
+		Name:     req.Name,
+		Position: maxPos + 1,
+	}
+	if err := s.db.Create(&tl).Error; err != nil {
+		return nil, err
+	}
+	return &tl, nil
+}
+
+// UpdateTierlist updates a tierlist's name.
+func (s *Service) UpdateTierlist(userID uint, tierlistID uint, req UpdateTierlistRequest) error {
+	result := s.db.Model(&entity.Tierlist{}).
+		Where("id = ? AND user_id = ?", tierlistID, userID).
+		Update("name", req.Name)
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return result.Error
+}
+
+// DeleteTierlist deletes a tierlist and all its tiers and items.
+func (s *Service) DeleteTierlist(userID uint, tierlistID uint) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Get all tier IDs in this tierlist
+		var tierIDs []uint
+		tx.Model(&entity.Tier{}).
+			Where("tierlist_id = ? AND user_id = ?", tierlistID, userID).
+			Pluck("id", &tierIDs)
+
+		// Delete tier items
+		if len(tierIDs) > 0 {
+			if err := tx.Where("tier_id IN ?", tierIDs).Delete(&entity.TierItem{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// Delete tiers
+		if err := tx.Where("tierlist_id = ? AND user_id = ?", tierlistID, userID).Delete(&entity.Tier{}).Error; err != nil {
+			return err
+		}
+
+		// Delete the tierlist
+		result := tx.Where("id = ? AND user_id = ?", tierlistID, userID).Delete(&entity.Tierlist{})
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return result.Error
+	})
+}
+
+// resolveListID returns the tierlist ID to use.
+// If tierlistID > 0, returns it directly.
+// Otherwise returns the first tierlist for the user (by position).
+func (s *Service) resolveListID(userID uint, tierlistID uint) uint {
+	if tierlistID > 0 {
+		return tierlistID
+	}
+	var tl entity.Tierlist
+	s.db.Where("user_id = ?", userID).Order("position ASC").First(&tl)
+	return tl.ID
+}
+
+// ==================== Tier CRUD (scoped to tierlist) ====================
+
+// GetTiers returns all tiers with their items for a user's tierlist, ordered by position.
+func (s *Service) GetTiers(userID uint, tierlistID uint) ([]entity.Tier, error) {
+	listID := s.resolveListID(userID, tierlistID)
+	if listID == 0 {
+		return []entity.Tier{}, nil
+	}
+	var tiers []entity.Tier
+	err := s.db.Where("user_id = ? AND tierlist_id = ?", userID, listID).
 		Order("position ASC").
 		Preload("TierItems", func(db *gorm.DB) *gorm.DB {
 			return db.Order("position ASC")
@@ -32,8 +165,8 @@ func (s *Service) GetTiers(userID uint) ([]entity.Tier, error) {
 	return tiers, err
 }
 
-// GetPublicTiers returns a public user's tierlist (checks privacy).
-func (s *Service) GetPublicTiers(userID uint, username string) ([]entity.Tier, error) {
+// GetPublicTiers returns a public user's tierlist tiers (checks privacy).
+func (s *Service) GetPublicTiers(userID uint, username string, tierlistID uint) ([]entity.Tier, error) {
 	user := new(entity.User)
 	res := s.db.Where("id = ? AND username = ?", userID, username).Take(&user)
 	if res.Error != nil {
@@ -42,22 +175,28 @@ func (s *Service) GetPublicTiers(userID uint, username string) ([]entity.Tier, e
 	if user.Private != nil && *user.Private {
 		return nil, errors.New("this user's list is private")
 	}
-	return s.GetTiers(userID)
+	return s.GetTiers(userID, tierlistID)
 }
 
-// CreateTier creates a new tier for a user.
+// CreateTier creates a new tier for a user in a specific tierlist.
 func (s *Service) CreateTier(userID uint, req CreateTierRequest) (*entity.Tier, error) {
-	// Get max position
+	listID := s.resolveListID(userID, req.TierlistID)
+	if listID == 0 {
+		return nil, errors.New("no tierlist found")
+	}
+
+	// Get max position within this tierlist
 	var maxPos int
-	s.db.Model(&entity.Tier{}).Where("user_id = ?", userID).
+	s.db.Model(&entity.Tier{}).Where("user_id = ? AND tierlist_id = ?", userID, listID).
 		Select("COALESCE(MAX(position), -1)").Scan(&maxPos)
 
 	tier := entity.Tier{
-		UserID:    userID,
-		Name:      req.Name,
-		Color:     req.Color,
-		TextColor: req.TextColor,
-		Position:  maxPos + 1,
+		UserID:     userID,
+		TierlistID: listID,
+		Name:       req.Name,
+		Color:      req.Color,
+		TextColor:  req.TextColor,
+		Position:   maxPos + 1,
 	}
 	if err := s.db.Create(&tier).Error; err != nil {
 		return nil, err
@@ -83,11 +222,9 @@ func (s *Service) UpdateTier(userID uint, tierID uint, req UpdateTierRequest) er
 // DeleteTier deletes a tier and all its items.
 func (s *Service) DeleteTier(userID uint, tierID uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// Delete all tier items first
 		if err := tx.Where("tier_id = ?", tierID).Delete(&entity.TierItem{}).Error; err != nil {
 			return err
 		}
-		// Delete the tier
 		result := tx.Where("id = ? AND user_id = ?", tierID, userID).Delete(&entity.Tier{})
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
@@ -111,10 +248,8 @@ func (s *Service) ReorderTiers(userID uint, tierIDs []uint) error {
 }
 
 // UpdateTierItems bulk updates all tier item assignments.
-// Items is a map of tierID -> []watchedID (in order).
 func (s *Service) UpdateTierItems(userID uint, items map[uint][]uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// First, verify all tiers belong to user
 		var tierIDs []uint
 		for tierID := range items {
 			tierIDs = append(tierIDs, tierID)
@@ -125,12 +260,10 @@ func (s *Service) UpdateTierItems(userID uint, items map[uint][]uint) error {
 			return gorm.ErrRecordNotFound
 		}
 
-		// Delete existing items for these tiers
 		if err := tx.Where("tier_id IN ?", tierIDs).Delete(&entity.TierItem{}).Error; err != nil {
 			return err
 		}
 
-		// Insert new items
 		for tierID, watchedIDs := range items {
 			for pos, watchedID := range watchedIDs {
 				item := entity.TierItem{
@@ -148,9 +281,9 @@ func (s *Service) UpdateTierItems(userID uint, items map[uint][]uint) error {
 	})
 }
 
-// SyncRatings maps tier positions to ratings (0-10) for backwards compatibility.
-func (s *Service) SyncRatings(userID uint) error {
-	tiers, err := s.GetTiers(userID)
+// SyncRatings maps tier positions to ratings for a specific tierlist.
+func (s *Service) SyncRatings(userID uint, tierlistID uint) error {
+	tiers, err := s.GetTiers(userID, tierlistID)
 	if err != nil {
 		return err
 	}
@@ -161,8 +294,6 @@ func (s *Service) SyncRatings(userID uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		totalTiers := len(tiers)
 		for i, tier := range tiers {
-			// Map tier position to rating range: top tier = 10, bottom tier = 1
-			// Each tier gets a rating band
 			tierRating := 10.0 - (float64(i) * 10.0 / float64(totalTiers))
 			if tierRating < 1 {
 				tierRating = 1
@@ -180,14 +311,19 @@ func (s *Service) SyncRatings(userID uint) error {
 	})
 }
 
-// CreateDefaultTiers creates the default S/A/B/C/D tiers for a user.
-func (s *Service) CreateDefaultTiers(userID uint) ([]entity.Tier, error) {
+// CreateDefaultTiers creates the default S/A/B/C/D tiers for a tierlist.
+func (s *Service) CreateDefaultTiers(userID uint, tierlistID uint) ([]entity.Tier, error) {
+	listID := s.resolveListID(userID, tierlistID)
+	if listID == 0 {
+		return nil, errors.New("no tierlist found")
+	}
+
 	defaults := []entity.Tier{
-		{UserID: userID, Name: "S", Color: "#FF7F7F", TextColor: "#000000", Position: 0},
-		{UserID: userID, Name: "A", Color: "#FFBF7F", TextColor: "#000000", Position: 1},
-		{UserID: userID, Name: "B", Color: "#FFDF7F", TextColor: "#000000", Position: 2},
-		{UserID: userID, Name: "C", Color: "#FFFF7F", TextColor: "#000000", Position: 3},
-		{UserID: userID, Name: "D", Color: "#BFFF7F", TextColor: "#000000", Position: 4},
+		{UserID: userID, TierlistID: listID, Name: "S", Color: "#FF7F7F", TextColor: "#000000", Position: 0},
+		{UserID: userID, TierlistID: listID, Name: "A", Color: "#FFBF7F", TextColor: "#000000", Position: 1},
+		{UserID: userID, TierlistID: listID, Name: "B", Color: "#FFDF7F", TextColor: "#000000", Position: 2},
+		{UserID: userID, TierlistID: listID, Name: "C", Color: "#FFFF7F", TextColor: "#000000", Position: 3},
+		{UserID: userID, TierlistID: listID, Name: "D", Color: "#BFFF7F", TextColor: "#000000", Position: 4},
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -205,22 +341,40 @@ func (s *Service) CreateDefaultTiers(userID uint) ([]entity.Tier, error) {
 	return defaults, nil
 }
 
-// GetUntieredWatched returns all watched items that are NOT in any tier for this user.
-func (s *Service) GetUntieredWatched(userID uint) ([]entity.Watched, error) {
+// GetUntieredWatched returns watched items not in any tier of the specified tierlist.
+func (s *Service) GetUntieredWatched(userID uint, tierlistID uint) ([]entity.Watched, error) {
+	listID := s.resolveListID(userID, tierlistID)
+	if listID == 0 {
+		// No tierlist, return all watched items
+		var watched []entity.Watched
+		err := s.db.Where("user_id = ?", userID).
+			Preload("Content").
+			Preload("Game").
+			Preload("Game.Poster").
+			Preload("Manga").
+			Preload("Manga.Poster").
+			Find(&watched).Error
+		return watched, err
+	}
+
 	var watched []entity.Watched
 	err := s.db.Where("user_id = ? AND id NOT IN (?)",
 		userID,
 		s.db.Model(&entity.TierItem{}).
 			Select("watched_id").
 			Joins("JOIN tiers ON tiers.id = tier_items.tier_id").
-			Where("tiers.user_id = ? AND tier_items.deleted_at IS NULL AND tiers.deleted_at IS NULL", userID),
+			Where("tiers.user_id = ? AND tiers.tierlist_id = ? AND tier_items.deleted_at IS NULL AND tiers.deleted_at IS NULL", userID, listID),
 	).
 		Preload("Content").
 		Preload("Game").
 		Preload("Game.Poster").
+		Preload("Manga").
+		Preload("Manga.Poster").
 		Find(&watched).Error
 	return watched, err
 }
+
+// ==================== Presets ====================
 
 // GetAllPresets returns all user-created presets, ordered newest first.
 func (s *Service) GetAllPresets() ([]entity.TierPreset, error) {
