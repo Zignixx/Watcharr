@@ -887,6 +887,21 @@
 		}
 	}
 
+	async function duplicateTierlist() {
+		if (!activeTierlistId) return;
+		const nid = notify({ text: "Duplicating tierlist...", type: "loading" });
+		try {
+			const resp = await axios.post(`/tierlist/list/${activeTierlistId}/duplicate`);
+			tierlists = [...tierlists, resp.data];
+			activeTierlistId = resp.data.id;
+			notify({ id: nid, text: "Tierlist duplicated!", type: "success" });
+			await loadTierlist();
+		} catch (err) {
+			console.error("Failed to duplicate tierlist:", err);
+			notify({ id: nid, text: "Failed to duplicate tierlist", type: "error" });
+		}
+	}
+
 	function getItemPoster(item: any): string | undefined {
 		// item can be a TierItem (with .watched) or a direct Watched object
 		const w = item.watched || item;
@@ -1444,6 +1459,9 @@
 				{#if activeTierlist}
 					<button class="tls-icon" onclick={() => { renameTierlistName = activeTierlist.name; showRenameTierlistModal = true; }} title="Rename">
 						<Icon i="pencil" wh={12} />
+					</button>
+					<button class="tls-icon" onclick={duplicateTierlist} title="Duplicate">
+						<Icon i="copy" wh={12} />
 					</button>
 					{#if tierlists.length > 1}
 						<button class="tls-icon tls-icon-delete" onclick={deleteTierlist} title="Delete">

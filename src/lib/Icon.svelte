@@ -395,6 +395,34 @@
 			d="M358.62 129.28L86.49 402.08 70 442l39.92-16.49 272.8-272.13-24.1-24.1zM413.07 74.84l-11.79 11.78 24.1 24.1 11.79-11.79a16.51 16.51 0 000-23.34l-.75-.75a16.51 16.51 0 00-23.35 0z"
 		/>
 	</svg>
+{:else if i === "copy"}
+	<svg
+		xmlns="http://www.w3.org/2000/svg"
+		width={wh}
+		height={wh}
+		viewBox="0 0 512 512"
+	>
+		<rect
+			x="128"
+			y="128"
+			width="336"
+			height="336"
+			rx="57"
+			ry="57"
+			fill="none"
+			stroke="currentColor"
+			stroke-linejoin="round"
+			stroke-width="32"
+		/>
+		<path
+			d="M383.5 128l.5-24a56.16 56.16 0 00-56-56H112a64.19 64.19 0 00-64 64v216a56.16 56.16 0 0056 56h24"
+			fill="none"
+			stroke="currentColor"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			stroke-width="32"
+		/>
+	</svg>
 {:else if i === "eye"}
 	<svg
 		xmlns="http://www.w3.org/2000/svg"

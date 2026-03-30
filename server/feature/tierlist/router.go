@@ -30,6 +30,7 @@ func (r *Router) AddRoutes() {
 	tl.POST("/list", r.CreateTierlist)
 	tl.PUT("/list/:id", r.UpdateTierlist)
 	tl.DELETE("/list/:id", r.DeleteTierlist)
+	tl.POST("/list/:id/duplicate", r.DuplicateTierlist)
 	tl.POST("/tier", r.CreateTier)
 	tl.PUT("/tier/:id", r.UpdateTier)
 	tl.DELETE("/tier/:id", r.DeleteTier)
@@ -110,6 +111,21 @@ func (r *Router) DeleteTierlist(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (r *Router) DuplicateTierlist(c *gin.Context) {
+	userID := c.MustGet("userId").(uint)
+	tlID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid tierlist id"})
+		return
+	}
+	tl, err := r.s.DuplicateTierlist(userID, uint(tlID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, router.ErrorResponse{Error: "failed to duplicate tierlist"})
+		return
+	}
+	c.JSON(http.StatusOK, tl)
 }
 
 func (r *Router) GetPublicTierlists(c *gin.Context) {

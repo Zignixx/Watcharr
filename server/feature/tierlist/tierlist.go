@@ -131,6 +131,74 @@ func (s *Service) DeleteTierlist(userID uint, tierlistID uint) error {
 	})
 }
 
+// DuplicateTierlist copies a tierlist with all its tiers and items.
+func (s *Service) DuplicateTierlist(userID uint, tierlistID uint) (*entity.Tierlist, error) {
+	// Get the source tierlist
+	var src entity.Tierlist
+	if err := s.db.Where("id = ? AND user_id = ?", tierlistID, userID).First(&src).Error; err != nil {
+		return nil, errors.New("tierlist not found")
+	}
+
+	// Get max position for the new tierlist
+	var maxPos int
+	s.db.Model(&entity.Tierlist{}).Where("user_id = ?", userID).
+		Select("COALESCE(MAX(position), -1)").Scan(&maxPos)
+
+	var newTL entity.Tierlist
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Create the new tierlist
+		newTL = entity.Tierlist{
+			UserID:   userID,
+			Name:     src.Name + " (Copy)",
+			Position: maxPos + 1,
+		}
+		if err := tx.Create(&newTL).Error; err != nil {
+			return err
+		}
+
+		// Get source tiers with items
+		var srcTiers []entity.Tier
+		if err := tx.Where("tierlist_id = ? AND user_id = ?", tierlistID, userID).
+			Order("position ASC").
+			Preload("TierItems", func(db *gorm.DB) *gorm.DB {
+				return db.Order("position ASC")
+			}).
+			Find(&srcTiers).Error; err != nil {
+			return err
+		}
+
+		// Copy each tier and its items
+		for _, st := range srcTiers {
+			newTier := entity.Tier{
+				UserID:     userID,
+				TierlistID: newTL.ID,
+				Name:       st.Name,
+				Color:      st.Color,
+				TextColor:  st.TextColor,
+				Position:   st.Position,
+			}
+			if err := tx.Create(&newTier).Error; err != nil {
+				return err
+			}
+			for _, si := range st.TierItems {
+				newItem := entity.TierItem{
+					TierID:    newTier.ID,
+					WatchedID: si.WatchedID,
+					Position:  si.Position,
+				}
+				if err := tx.Create(&newItem).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &newTL, nil
+}
+
 // resolveListID returns the tierlist ID to use.
 // If tierlistID > 0, returns it directly.
 // Otherwise returns the first tierlist for the user (by position).
