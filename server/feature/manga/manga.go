@@ -3,9 +3,12 @@ package manga
 import (
 	"errors"
 	"log/slog"
+	"os"
+	"path"
 	"strings"
 	"time"
 
+	"github.com/sbondCo/Watcharr/config"
 	"github.com/sbondCo/Watcharr/database/entity"
 	"github.com/sbondCo/Watcharr/domain"
 	"github.com/sbondCo/Watcharr/image"
@@ -21,11 +24,46 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB, jikan *jikan.Jikan, activityProvider domain.ActivityAddProvider) *Service {
-	return &Service{
+	s := &Service{
 		db,
 		jikan,
 		activityProvider,
 	}
+	s.refreshIncompleteManga()
+	return s
+}
+
+// refreshIncompleteManga is a one-time migration that re-fetches manga entries
+// missing poster data (poster_id IS NULL). This ensures manga added before poster
+// caching was fixed are backfilled so they display correctly in tierlists etc.
+func (s *Service) refreshIncompleteManga() {
+	markerPath := path.Join(config.DataPath, ".manga_poster_refresh_done")
+	if _, err := os.Stat(markerPath); err == nil {
+		return // Already done
+	}
+	var mangas []entity.Manga
+	s.db.Where("poster_id IS NULL AND poster_url != ''").Find(&mangas)
+	if len(mangas) == 0 {
+		os.WriteFile(markerPath, []byte("done"), 0644)
+		return
+	}
+	slog.Info("refreshIncompleteManga: Found manga entries missing posters, refreshing...", "count", len(mangas))
+	for _, m := range mangas {
+		resp, err := s.jikan.MangaDetails(m.MalID)
+		if err != nil {
+			slog.Error("refreshIncompleteManga: Failed to fetch manga details", "malId", m.MalID, "error", err)
+			continue
+		}
+		if _, err := s.cacheManga(resp); err != nil {
+			slog.Error("refreshIncompleteManga: Failed to re-cache manga", "malId", m.MalID, "error", err)
+		} else {
+			slog.Info("refreshIncompleteManga: Refreshed manga", "malId", m.MalID, "title", m.Title)
+		}
+		// Jikan has rate limits, small delay between requests
+		time.Sleep(500 * time.Millisecond)
+	}
+	os.WriteFile(markerPath, []byte("done"), 0644)
+	slog.Info("refreshIncompleteManga: Migration complete.")
 }
 
 // Cache(save) manga to our table
@@ -50,6 +88,7 @@ func (s *Service) saveManga(c *entity.Manga) error {
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title",
 			"poster_url",
+			"poster_id",
 			"synopsis",
 			"release_date",
 			"score",
@@ -126,21 +165,35 @@ func (s *Service) GetOrCache(malID int) (entity.Manga, error) {
 
 	if manga == (entity.Manga{}) {
 		slog.Debug("GetOrCache: Manga not in db, fetching...")
-
-		resp, err := s.jikan.MangaDetails(malID)
-		if err != nil {
-			slog.Error("GetOrCache: jikan api request failed", "error", err)
-			return manga, errors.New("failed to find requested manga")
-		}
-
-		manga, err = s.cacheManga(resp)
-		if err != nil {
-			slog.Error("GetOrCache: failed to cache manga",
-				"mal_id", malID,
-				"err", err)
-			return manga, errors.New("failed to cache manga")
-		}
+		return s.fetchAndCache(malID)
 	}
 
+	// Re-fetch if manga is missing poster data
+	if manga.PosterID == nil && manga.PosterURL != "" {
+		slog.Info("GetOrCache: Manga missing cached poster, re-fetching...", "mal_id", malID)
+		refreshed, err := s.fetchAndCache(malID)
+		if err == nil {
+			return refreshed, nil
+		}
+		slog.Error("GetOrCache: Failed to refresh manga, returning existing data", "error", err)
+	}
+
+	return manga, nil
+}
+
+func (s *Service) fetchAndCache(malID int) (entity.Manga, error) {
+	resp, err := s.jikan.MangaDetails(malID)
+	if err != nil {
+		slog.Error("fetchAndCache: jikan api request failed", "error", err)
+		return entity.Manga{}, errors.New("failed to find requested manga")
+	}
+
+	manga, err := s.cacheManga(resp)
+	if err != nil {
+		slog.Error("fetchAndCache: failed to cache manga",
+			"mal_id", malID,
+			"err", err)
+		return manga, errors.New("failed to cache manga")
+	}
 	return manga, nil
 }

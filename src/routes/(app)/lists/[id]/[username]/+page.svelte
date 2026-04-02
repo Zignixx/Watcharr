@@ -115,6 +115,8 @@
 		if (w.content?.poster_path) return `${baseURL}/img${w.content.poster_path}`;
 		if (w.game?.poster?.path) return `${baseURL}/${w.game.poster.path}`;
 		if (w.game?.coverId) return `https://images.igdb.com/igdb/image/upload/t_cover_big/${w.game.coverId}.jpg`;
+		if (w.manga?.poster?.path) return `${baseURL}/${w.manga.poster.path}`;
+		if (w.manga?.posterUrl) return w.manga.posterUrl;
 		return undefined;
 	}
 
@@ -122,6 +124,7 @@
 		const w = item.watched || item;
 		if (w.content?.title) return w.content.title;
 		if (w.game?.name) return w.game.name;
+		if (w.manga?.title) return w.manga.title;
 		return "Unknown";
 	}
 
@@ -129,6 +132,7 @@
 		const w = item.watched || item;
 		if (w.content) return `/${w.content.type}/${w.content.tmdbId}`;
 		if (w.game) return `/game/${w.game.igdbId}`;
+		if (w.manga) return `/manga/${w.manga.malId}`;
 		return undefined;
 	}
 
