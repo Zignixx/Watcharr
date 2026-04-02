@@ -229,6 +229,8 @@ func (s *Service) GetTiers(userID uint, tierlistID uint) ([]entity.Tier, error) 
 		Preload("TierItems.Watched.Content").
 		Preload("TierItems.Watched.Game").
 		Preload("TierItems.Watched.Game.Poster").
+		Preload("TierItems.Watched.Manga").
+		Preload("TierItems.Watched.Manga.Poster").
 		Find(&tiers).Error
 	return tiers, err
 }

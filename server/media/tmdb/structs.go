@@ -691,15 +691,19 @@ func (t *TMDBPersonDetails) AsPersonDetailsResponse() domain.PersonDetailsRespon
 		Homepage:           t.Homepage,
 	}
 	// Dates
-	if date, err := time.Parse("2006-01-02", t.Birthday); err == nil {
-		m.Birthday = date
-	} else {
-		slog.Error("AsPersonDetailsResponse: Failed to parse birthdate", "name", m.Name, "error", err)
+	if t.Birthday != "" {
+		if date, err := time.Parse("2006-01-02", t.Birthday); err == nil {
+			m.Birthday = date
+		} else {
+			slog.Error("AsPersonDetailsResponse: Failed to parse birthdate", "name", m.Name, "error", err)
+		}
 	}
-	if date, err := time.Parse("2006-01-02", t.Deathday); err == nil {
-		m.Deathday = date
-	} else {
-		slog.Error("AsPersonDetailsResponse: Failed to parse birthdate", "name", m.Name, "error", err)
+	if t.Deathday != "" {
+		if date, err := time.Parse("2006-01-02", t.Deathday); err == nil {
+			m.Deathday = date
+		} else {
+			slog.Error("AsPersonDetailsResponse: Failed to parse deathday", "name", m.Name, "error", err)
+		}
 	}
 	// Age
 	m.Age = util.GetAge(m.Birthday, m.Deathday)
@@ -767,10 +771,12 @@ func (t *TMDBPersonCombinedCreditsCastResult) AsMedia() domain.Media {
 		m.Type = domain.MediaTypeTMDBShow
 		tmdbReleaseDate = t.FirstAirDate
 	}
-	if releaseDate, err := time.Parse("2006-01-02", tmdbReleaseDate); err == nil {
-		m.ReleaseDate = releaseDate
-	} else {
-		slog.Error("AsMedia: Failed to parse release date", "name", m.Name, "error", err)
+	if tmdbReleaseDate != "" {
+		if releaseDate, err := time.Parse("2006-01-02", tmdbReleaseDate); err == nil {
+			m.ReleaseDate = releaseDate
+		} else {
+			slog.Error("AsMedia: Failed to parse release date", "name", m.Name, "error", err)
+		}
 	}
 	m.Character = t.Character
 	return m
