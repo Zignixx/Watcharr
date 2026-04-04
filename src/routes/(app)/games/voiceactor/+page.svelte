@@ -10,7 +10,7 @@
 
 	type FilterMode = "status" | "tier";
 
-	const ROUND_TIME = 15;
+	const ROUND_TIME = 60;
 
 	interface CastMember {
 		id: number;
