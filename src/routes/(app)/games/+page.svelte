@@ -134,6 +134,22 @@
 			{/if}
 			<span class="game-tag">Number Cruncher</span>
 		</a>
+
+		<a href="/games/voiceactor" class="game-card">
+			<div class="game-icon" style="background: linear-gradient(135deg, #e44d26, #f7df1e);">
+				<Icon i="person" wh={40} />
+			</div>
+			<h3>Voice Actor Quiz</h3>
+			<p>Do you know which actors starred in your shows? Identify the odd one out or match actors to their characters!</p>
+			{#if scores.voiceactor}
+				<div class="score-row">
+					<span class="score-badge">🏆 {scores.voiceactor.highScore.toLocaleString()}</span>
+					<span class="score-badge">🔥 {scores.voiceactor.bestStreak}</span>
+					<span class="score-badge">🎮 {scores.voiceactor.timesPlayed}x</span>
+				</div>
+			{/if}
+			<span class="game-tag">Cast Expert</span>
+		</a>
 	</div>
 </div>
 
