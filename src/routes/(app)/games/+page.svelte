@@ -140,7 +140,7 @@
 				<Icon i="person" wh={40} />
 			</div>
 			<h3>Voice Actor Quiz</h3>
-			<p>Do you know which actors starred in your shows? Identify the odd one out or match actors to their characters!</p>
+			<p>Which characters share the same voice actor? Match characters across your shows by their voice!</p>
 			{#if scores.voiceactor}
 				<div class="score-row">
 					<span class="score-badge">🏆 {scores.voiceactor.highScore.toLocaleString()}</span>

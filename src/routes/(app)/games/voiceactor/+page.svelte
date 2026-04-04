@@ -12,7 +12,6 @@
 
 	const ROUND_TIME = 15;
 
-	// --- Actor & character data ---
 	interface CastMember {
 		id: number;
 		name: string;
@@ -26,16 +25,23 @@
 		cast: CastMember[];
 	}
 
-	type QuestionMode = "odd_show" | "match_character";
+	/** actorId → [{showName, character}] across all fetched shows */
+	type ActorRoleMap = Map<number, { actorName: string; photo: string; roles: { showName: string; character: string }[] }>;
+
+	type QuestionMode = "who_else" | "odd_character" | "match_character";
 
 	interface RoundData {
 		mode: QuestionMode;
-		actorName: string;
+		/** The character shown as the prompt */
+		promptCharacter: string;
+		/** The show that character is from */
+		promptShow: string;
+		/** Actor photo (TMDB) */
 		actorPhoto: string;
-		/** Mode A: the show name the actor is known from (context hint) */
-		contextShow?: string;
-		/** Mode B: the specific show for character matching */
-		targetShow?: string;
+		/** For display after answer */
+		actorName: string;
+		/** Question text */
+		question: string;
 		options: string[];
 		correctIndex: number;
 		explanation: string;
@@ -52,6 +58,7 @@
 	// --- Game state ---
 	let allItems: Media[] = $state([]);
 	let loading = $state(true);
+	let loadingMsg = $state("");
 	let error = $state("");
 	let gamePhase: "setup" | "playing" | "gameover" = $state("setup");
 
@@ -67,8 +74,8 @@
 	let streak = $state(0);
 	let bestStreak = $state(0);
 
-	// Cache of credits per show
 	let creditsCache: Map<string, ShowCredits> = new Map();
+	let actorRoles: ActorRoleMap = new Map();
 	let usedQuestionKeys = new Set<string>();
 
 	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -150,7 +157,6 @@
 				const r = await axios.get("/watched", { params: { status: enabledStatuses.join(","), limit: 500, page: 1 } });
 				allItems = (r.data?.results ?? r.data ?? []).filter((m: Media) => m.name);
 			}
-			// Only keep TV shows and movies (things that have TMDB credits with actors)
 			allItems = allItems.filter((m) => m.type === MediaTypeE.tmdbShow || m.type === MediaTypeE.tmdbMovie);
 		} catch { error = "Failed to load items."; allItems = []; }
 		loading = false;
@@ -164,16 +170,6 @@
 		if (m.type === MediaTypeE.tmdbMovie) return "movie";
 		if (m.type === MediaTypeE.tmdbShow) return "tv";
 		return "movie";
-	}
-
-	function getPoster(m: Media): string {
-		if (m.poster?.path) return `${baseURL}/${m.poster.path}`;
-		if (!m.extPosterPath) return "";
-		if (m.type === MediaTypeE.tmdbMovie || m.type === MediaTypeE.tmdbShow) {
-			if (m.watched) return `${baseURL}/img${m.extPosterPath}`;
-			return `https://image.tmdb.org/t/p/w200${m.extPosterPath}`;
-		}
-		return "";
 	}
 
 	async function fetchCredits(item: Media): Promise<ShowCredits | null> {
@@ -192,111 +188,194 @@
 		} catch { return null; }
 	}
 
-	// --- Question generators ---
+	/** Build a map: actorId → all roles across all fetched shows */
+	function buildActorRoleMap() {
+		actorRoles.clear();
+		for (const [, sc] of creditsCache) {
+			for (const c of sc.cast) {
+				if (!actorRoles.has(c.id)) {
+					actorRoles.set(c.id, { actorName: c.name, photo: c.profile_path ?? "", roles: [] });
+				}
+				const entry = actorRoles.get(c.id)!;
+				if (!entry.roles.some((r) => r.showName === sc.item.name && r.character === c.character)) {
+					entry.roles.push({ showName: sc.item.name!, character: c.character });
+				}
+				if (!entry.photo && c.profile_path) entry.photo = c.profile_path;
+			}
+		}
+	}
+
+	/** Collect all unique characters from all fetched credits (for wrong options) */
+	function getAllCharacters(): string[] {
+		const chars = new Set<string>();
+		for (const [, sc] of creditsCache) {
+			for (const c of sc.cast) chars.add(c.character);
+		}
+		return [...chars];
+	}
+
+	// ========== QUESTION GENERATORS ==========
 
 	/**
-	 * Mode A: "In which of these was [Actor] NOT a cast member?"
-	 * Show actor photo + name. 4 shows: 3 they appeared in, 1 they didn't.
+	 * Mode A — "who_else":
+	 * "The voice actor of [Character] in [Show] also voices which other character?"
+	 * Requires an actor that appears in ≥2 different shows in the user's watchlist.
+	 * 4 options: 1 correct (another character from another show), 3 wrong characters.
 	 */
-	async function genOddShowQuestion(): Promise<RoundData | null> {
-		const pool = shuffle([...allItems]);
+	function genWhoElseQuestion(): RoundData | null {
+		// Find actors with roles in ≥2 shows
+		const multiShowActors = [...actorRoles.entries()].filter(([, a]) => {
+			const shows = new Set(a.roles.map((r) => r.showName));
+			return shows.size >= 2 && a.photo;
+		});
+		if (multiShowActors.length === 0) return null;
 
-		for (const baseItem of pool) {
-			const credits = await fetchCredits(baseItem);
-			if (!credits || credits.cast.length < 3) continue;
-
-			// Pick an actor with a profile image from this show
-			const actorsWithPhoto = credits.cast.filter((c) => c.profile_path);
-			if (actorsWithPhoto.length === 0) continue;
-			const actor = actorsWithPhoto[Math.floor(Math.random() * actorsWithPhoto.length)];
-
-			// Find other shows from watchlist where this actor also appears
-			const appearsIn: Media[] = [baseItem];
-			const otherShows = shuffle(pool.filter((m) => m.name !== baseItem.name));
-
-			for (const other of otherShows) {
-				if (appearsIn.length >= 3) break;
-				const otherCredits = await fetchCredits(other);
-				if (!otherCredits) continue;
-				if (otherCredits.cast.some((c) => c.id === actor.id)) {
-					appearsIn.push(other);
-				}
-			}
-
-			if (appearsIn.length < 3) continue;
-
-			// Find a show where the actor does NOT appear
-			let oddItem: Media | null = null;
-			for (const candidate of otherShows) {
-				if (appearsIn.some((a) => a.name === candidate.name)) continue;
-				const candCredits = await fetchCredits(candidate);
-				if (!candCredits) continue;
-				if (!candCredits.cast.some((c) => c.id === actor.id)) {
-					oddItem = candidate;
-					break;
-				}
-			}
-
-			if (!oddItem) continue;
-
-			const qKey = `odd_${actor.id}`;
+		for (const [actorId, actor] of shuffle(multiShowActors)) {
+			const qKey = `whoelse_${actorId}`;
 			if (usedQuestionKeys.has(qKey)) continue;
+
+			const roles = shuffle([...actor.roles]);
+			const promptRole = roles[0];
+			const answerRole = roles.find((r) => r.showName !== promptRole.showName);
+			if (!answerRole) continue;
+
+			// Wrong options: characters NOT voiced by this actor
+			const allChars = getAllCharacters();
+			const actorCharNames = new Set(actor.roles.map((r) => r.character));
+			const wrongPool = allChars.filter((c) => !actorCharNames.has(c) && c !== answerRole.character);
+			if (wrongPool.length < 3) continue;
+			const wrongChars = shuffle(wrongPool).slice(0, 3);
+
+			const opts = shuffle([`${answerRole.character} (${answerRole.showName})`, ...wrongChars.map((c) => {
+				// Find which show this wrong character is from for display
+				for (const [, sc] of creditsCache) {
+					const found = sc.cast.find((cm) => cm.character === c);
+					if (found) return `${c} (${sc.item.name})`;
+				}
+				return c;
+			})]);
+
+			const correctOpt = `${answerRole.character} (${answerRole.showName})`;
+			const correctIdx = opts.indexOf(correctOpt);
+
 			usedQuestionKeys.add(qKey);
-
-			const showsIn = appearsIn.slice(0, 3);
-			const allOptions = shuffle([...showsIn.map((s) => s.name!), oddItem.name!]);
-			const correctIdx = allOptions.indexOf(oddItem.name!);
-
 			return {
-				mode: "odd_show",
-				actorName: actor.name,
-				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.profile_path}`,
-				options: allOptions,
+				mode: "who_else",
+				promptCharacter: promptRole.character,
+				promptShow: promptRole.showName,
+				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				actorName: actor.actorName,
+				question: `The voice actor of "${promptRole.character}" (${promptRole.showName}) also voices which of these characters?`,
+				options: opts,
 				correctIndex: correctIdx,
-				explanation: `${actor.name} was NOT in "${oddItem.name}". They appeared in: ${showsIn.map((s) => s.name).join(", ")}.`,
+				explanation: `${actor.actorName} voices both "${promptRole.character}" in ${promptRole.showName} and "${answerRole.character}" in ${answerRole.showName}.`,
 			};
 		}
 		return null;
 	}
 
 	/**
-	 * Mode B: "[Actor] appeared in [Show]. Which character did they play?"
-	 * Show actor photo + name + show name. 4 characters from that show, 1 correct.
+	 * Mode B — "odd_character":
+	 * "3 of these characters share the same voice actor. Which one does NOT?"
+	 * Requires an actor with ≥3 roles.
 	 */
-	async function genCharacterQuestion(): Promise<RoundData | null> {
-		const pool = shuffle([...allItems]);
+	function genOddCharacterQuestion(): RoundData | null {
+		const multiRoleActors = [...actorRoles.entries()].filter(([, a]) => a.roles.length >= 3 && a.photo);
+		if (multiRoleActors.length === 0) return null;
 
-		for (const item of pool) {
-			const credits = await fetchCredits(item);
-			if (!credits || credits.cast.length < 4) continue;
-
-			// Pick an actor with a profile photo
-			const actorsWithPhoto = credits.cast.filter((c) => c.profile_path);
-			if (actorsWithPhoto.length === 0) continue;
-			const actor = actorsWithPhoto[Math.floor(Math.random() * actorsWithPhoto.length)];
-
-			const qKey = `char_${actor.id}_${item.ids?.tmdb}`;
+		for (const [actorId, actor] of shuffle(multiRoleActors)) {
+			const qKey = `odd_${actorId}`;
 			if (usedQuestionKeys.has(qKey)) continue;
+
+			const sameRoles = shuffle([...actor.roles]).slice(0, 3);
+			// Find a character NOT voiced by this actor
+			const actorCharNames = new Set(actor.roles.map((r) => r.character));
+			const allChars = getAllCharacters();
+			const oddPool = allChars.filter((c) => !actorCharNames.has(c));
+			if (oddPool.length === 0) continue;
+			const oddChar = oddPool[Math.floor(Math.random() * oddPool.length)];
+
+			// Find show name for odd character
+			let oddShowName = "";
+			for (const [, sc] of creditsCache) {
+				const found = sc.cast.find((cm) => cm.character === oddChar);
+				if (found) { oddShowName = sc.item.name!; break; }
+			}
+
+			const correctOpt = `${oddChar} (${oddShowName})`;
+			const opts = shuffle([...sameRoles.map((r) => `${r.character} (${r.showName})`), correctOpt]);
+			const correctIdx = opts.indexOf(correctOpt);
+
 			usedQuestionKeys.add(qKey);
+			return {
+				mode: "odd_character",
+				promptCharacter: sameRoles[0].character,
+				promptShow: sameRoles[0].showName,
+				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				actorName: actor.actorName,
+				question: `3 of these characters share the same voice actor. Which one does NOT?`,
+				options: opts,
+				correctIndex: correctIdx,
+				explanation: `${actor.actorName} voices ${sameRoles.map((r) => `"${r.character}" (${r.showName})`).join(", ")} — but NOT "${oddChar}".`,
+			};
+		}
+		return null;
+	}
 
-			// Get 3 wrong characters from the same show
-			const otherChars = credits.cast
-				.filter((c) => c.id !== actor.id && c.character)
+	/**
+	 * Mode C — "match_character":
+	 * "In [Show], which character is voiced by the same actor as [Character] from [OtherShow]?"
+	 * Show 4 characters from the target show, pick the one with the same voice actor.
+	 */
+	function genMatchCharacterQuestion(): RoundData | null {
+		const multiShowActors = [...actorRoles.entries()].filter(([, a]) => {
+			const shows = new Set(a.roles.map((r) => r.showName));
+			return shows.size >= 2 && a.photo;
+		});
+		if (multiShowActors.length === 0) return null;
+
+		for (const [actorId, actor] of shuffle(multiShowActors)) {
+			const qKey = `match_${actorId}`;
+			if (usedQuestionKeys.has(qKey)) continue;
+
+			const roles = [...actor.roles];
+			const showGroups = new Map<string, string[]>();
+			for (const r of roles) {
+				if (!showGroups.has(r.showName)) showGroups.set(r.showName, []);
+				showGroups.get(r.showName)!.push(r.character);
+			}
+
+			// Need a prompt show and a target show
+			const showNames = shuffle([...showGroups.keys()]);
+			if (showNames.length < 2) continue;
+			const promptShow = showNames[0];
+			const targetShow = showNames[1];
+			const promptChar = showGroups.get(promptShow)![0];
+			const targetChar = showGroups.get(targetShow)![0];
+
+			// Get other characters from target show as wrong options
+			const targetCreditsEntry = [...creditsCache.values()].find((sc) => sc.item.name === targetShow);
+			if (!targetCreditsEntry || targetCreditsEntry.cast.length < 4) continue;
+
+			const wrongChars = targetCreditsEntry.cast
+				.filter((c) => c.character !== targetChar && c.id !== actorId)
 				.map((c) => c.character);
-			if (otherChars.length < 3) continue;
-			const wrongChars = shuffle(otherChars).slice(0, 3);
+			if (wrongChars.length < 3) continue;
 
-			const allOptions = shuffle([actor.character, ...wrongChars]);
-			const correctIdx = allOptions.indexOf(actor.character);
+			const opts = shuffle([targetChar, ...shuffle(wrongChars).slice(0, 3)]);
+			const correctIdx = opts.indexOf(targetChar);
 
+			usedQuestionKeys.add(qKey);
 			return {
 				mode: "match_character",
-				actorName: actor.name,
-				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.profile_path}`,
-				targetShow: item.name!,
-				options: allOptions,
+				promptCharacter: promptChar,
+				promptShow: promptShow,
+				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				actorName: actor.actorName,
+				question: `In "${targetShow}", which character is voiced by the same actor as "${promptChar}" (${promptShow})?`,
+				options: opts,
 				correctIndex: correctIdx,
-				explanation: `${actor.name} played "${actor.character}" in "${item.name}".`,
+				explanation: `${actor.actorName} voices "${promptChar}" in ${promptShow} and "${targetChar}" in ${targetShow}.`,
 			};
 		}
 		return null;
@@ -305,23 +384,20 @@
 	async function setupRound(): Promise<boolean> {
 		clearTimers();
 
-		// Alternate between question modes, with some randomness
-		const mode: QuestionMode = Math.random() < 0.5 ? "odd_show" : "match_character";
+		// Randomly pick a question mode
+		const generators = shuffle([genWhoElseQuestion, genOddCharacterQuestion, genMatchCharacterQuestion]);
 		let rd: RoundData | null = null;
-
-		if (mode === "odd_show") {
-			rd = await genOddShowQuestion();
-			if (!rd) rd = await genCharacterQuestion();
-		} else {
-			rd = await genCharacterQuestion();
-			if (!rd) rd = await genOddShowQuestion();
+		for (const gen of generators) {
+			rd = gen();
+			if (rd) break;
 		}
 
 		if (!rd) {
-			// Reset used keys and try once more
 			usedQuestionKeys.clear();
-			rd = await genCharacterQuestion();
-			if (!rd) rd = await genOddShowQuestion();
+			for (const gen of generators) {
+				rd = gen();
+				if (rd) break;
+			}
 		}
 
 		if (!rd) return false;
@@ -342,16 +418,27 @@
 		}
 		error = ""; score = 0; round = 0; streak = 0; bestStreak = 0;
 		creditsCache.clear();
+		actorRoles.clear();
 		usedQuestionKeys.clear();
 		loading = true;
+		loadingMsg = "Loading watchlist...";
 
-		// Pre-fetch credits for a batch to speed up first round
-		const batch = shuffle([...allItems]).slice(0, 10);
-		await Promise.all(batch.map((item) => fetchCredits(item)));
+		// Pre-fetch credits for a batch of shows
+		loadingMsg = `Loading cast data (0/${Math.min(allItems.length, 15)})...`;
+		const batch = shuffle([...allItems]).slice(0, 15);
+		let fetched = 0;
+		await Promise.all(batch.map(async (item) => {
+			await fetchCredits(item);
+			fetched++;
+			loadingMsg = `Loading cast data (${fetched}/${batch.length})...`;
+		}));
+		loadingMsg = "Building questions...";
+		buildActorRoleMap();
 
 		loading = false;
+		loadingMsg = "";
 		if (!(await setupRound())) {
-			error = "Couldn't find enough cast data. Try adding more shows/movies to your watchlist!";
+			error = "Couldn't find enough shared voice actors. Try adding more shows to your watchlist!";
 			return;
 		}
 		gamePhase = "playing";
@@ -371,6 +458,15 @@
 			if (streak > bestStreak) bestStreak = streak;
 			scheduleAction(async () => {
 				round++;
+				// Every 5 rounds, fetch more credits to expand the pool
+				if (round % 5 === 0) {
+					const unfetched = allItems.filter((m) => !creditsCache.has(`${getContentType(m)}_${m.ids?.tmdb}`));
+					if (unfetched.length > 0) {
+						const extra = shuffle(unfetched).slice(0, 5);
+						await Promise.all(extra.map((item) => fetchCredits(item)));
+						buildActorRoleMap();
+					}
+				}
 				if (!(await setupRound())) gamePhase = "gameover";
 			}, 2500);
 		} else {
@@ -397,7 +493,7 @@
 	<PageTitle title="Voice Actor Quiz" />
 
 	{#if gamePhase === "setup"}
-		<p class="subtitle">Test your knowledge of actors and their roles!</p>
+		<p class="subtitle">Do you know which characters share the same voice actor?</p>
 
 		<div class="filter-mode-toggle">
 			<button class="plain filter-mode-btn" class:active={filterMode === "status"} onclick={() => switchFilterMode("status")}>Status</button>
@@ -426,6 +522,12 @@
 		{/if}
 
 		{#if error}<div class="error-msg">{error}</div>{/if}
+		{#if loading && loadingMsg}
+			<div class="loading-overlay">
+				<SpinnerTiny />
+				<span class="loading-text">{loadingMsg}</span>
+			</div>
+		{/if}
 		<button class="plain start-btn" onclick={startGame} disabled={loading}>
 			{#if loading}<SpinnerTiny /> Loading...{:else}<Icon i="person" wh={22} /> Start Game{/if}
 		</button>
@@ -442,17 +544,12 @@
 			<span class="timer-label">{timeLeft.toFixed(1)}s</span>
 		</div>
 
-		<div class="actor-card">
+		<div class="character-card">
 			{#if roundData.actorPhoto}
-				<img src={roundData.actorPhoto} alt={roundData.actorName} class="actor-photo" />
+				<img src={roundData.actorPhoto} alt="Voice Actor" class="actor-photo" />
 			{/if}
-			<div class="actor-info">
-				<h2 class="actor-name">{roundData.actorName}</h2>
-				{#if roundData.mode === "odd_show"}
-					<p class="question-text">In which of these was this actor <strong>NOT</strong> a cast member?</p>
-				{:else}
-					<p class="question-text">Which character did they play in <strong>"{roundData.targetShow}"</strong>?</p>
-				{/if}
+			<div class="character-info">
+				<p class="question-text">{roundData.question}</p>
 			</div>
 		</div>
 
@@ -480,6 +577,7 @@
 					<span class="feedback-wrong">⏰ Time's up!</span>
 				{/if}
 				<p class="explanation">{roundData.explanation}</p>
+				<p class="actor-reveal">🎙️ {roundData.actorName}</p>
 			</div>
 		{/if}
 
@@ -509,6 +607,19 @@
 	.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid $bg-color-accent; background: transparent; color: $text-color-accent; font-size: 12px; cursor: pointer; transition: all 150ms ease; &.active { background: $accent-color-hover; color: $bg-color; border-color: $accent-color-hover; } }
 	.tier-filter-btn { border-color: var(--tier-bg); &:hover, &.active { background: var(--tier-bg); color: var(--tier-text); border-color: var(--tier-bg); } }
 	.error-msg { color: #ff6b6b; font-size: 14px; }
+	.loading-overlay {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		padding: 24px 32px;
+		border-radius: 14px;
+		background: $accent-color;
+		border: 1px solid $bg-color-accent;
+		animation: fade-in 200ms ease;
+	}
+	.loading-text { font-size: 14px; color: $text-color-accent; font-weight: 600; }
+	@keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 	.start-btn { display: flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; background: $accent-color-hover; color: $bg-color; fill: $bg-color; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 150ms ease, opacity 150ms ease; &:hover { transform: scale(1.03); } &:disabled { opacity: 0.5; cursor: not-allowed; } }
 
 	.game-header { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
@@ -521,7 +632,7 @@
 	.timer-bar.timer-low { background: #ff6b6b; }
 	.timer-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 12px; font-weight: 700; color: $text-color; }
 
-	.actor-card {
+	.character-card {
 		display: flex;
 		align-items: center;
 		gap: 20px;
@@ -533,32 +644,26 @@
 	}
 
 	.actor-photo {
-		width: 100px;
-		height: 130px;
+		width: 90px;
+		height: 120px;
 		object-fit: cover;
 		border-radius: 12px;
 		flex-shrink: 0;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 	}
 
-	.actor-info {
+	.character-info {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 	}
 
-	.actor-name {
-		margin: 0;
-		font-size: 22px;
-		font-weight: 700;
-		color: $text-color;
-	}
-
 	.question-text {
 		margin: 0;
 		font-size: 15px;
-		color: $text-color-accent;
-		line-height: 1.5;
+		color: $text-color;
+		line-height: 1.6;
+		font-weight: 500;
 	}
 
 	.options-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
@@ -585,6 +690,7 @@
 	.feedback-correct { font-size: 16px; font-weight: 700; color: #51cf66; }
 	.feedback-wrong { font-size: 16px; font-weight: 700; color: #ff6b6b; }
 	.explanation { font-size: 13px; color: $text-color-accent; margin: 0; line-height: 1.5; }
+	.actor-reveal { font-size: 15px; font-weight: 700; color: $text-color; margin: 0; }
 
 	.result-card { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px; border-radius: 16px; background: $accent-color; border: 1px solid $bg-color-accent; }
 	.result-emoji { font-size: 64px; animation: result-bounce 500ms ease; }
@@ -597,8 +703,8 @@
 	.back-link { color: $text-color-accent; font-size: 14px; text-decoration: none; &:hover { color: $text-color; } }
 
 	@media (max-width: 500px) {
-		.actor-card { flex-direction: column; text-align: center; }
-		.actor-photo { width: 80px; height: 104px; }
+		.character-card { flex-direction: column; text-align: center; }
+		.actor-photo { width: 70px; height: 94px; }
 		.options-grid { grid-template-columns: 1fr; }
 	}
 </style>
