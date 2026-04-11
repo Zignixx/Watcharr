@@ -383,7 +383,7 @@
 								<div class="ctx-similar-statuses">
 									{#each Object.entries(watchedStatuses) as [statusName, icon]}
 										<button
-											class="ctx-similar-status-btn"
+											class="plain ctx-similar-status-btn"
 											class:active={item.watched?.status === statusName}
 											onclick={(e) => handleSimilarStatusChange(item, statusName as WatchedStatus, e)}
 											disabled={isSaving}
@@ -395,7 +395,7 @@
 									{/each}
 									{#if item.watched?.id}
 										<button
-											class="ctx-similar-status-btn delete"
+											class="plain ctx-similar-status-btn delete"
 											onclick={(e) => handleSimilarRemove(item, e)}
 											disabled={isSaving}
 											title="Remove"
@@ -805,6 +805,7 @@
 
 	.ctx-similar-statuses {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 3px;
 	}
 
@@ -812,7 +813,6 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		flex: 1;
 		gap: 3px;
 		padding: 3px 4px;
 		border-radius: 4px;

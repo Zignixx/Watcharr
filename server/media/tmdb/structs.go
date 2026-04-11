@@ -392,12 +392,12 @@ type TMDBCollection struct {
 }
 
 type TMDBCollectionDetails struct {
-	ID           int                       `json:"id"`
-	Name         string                    `json:"name"`
-	Overview     string                    `json:"overview"`
-	PosterPath   string                    `json:"poster_path"`
-	BackdropPath string                    `json:"backdrop_path"`
-	Parts        []TMDBCollectionPart      `json:"parts"`
+	ID           int                  `json:"id"`
+	Name         string               `json:"name"`
+	Overview     string               `json:"overview"`
+	PosterPath   string               `json:"poster_path"`
+	BackdropPath string               `json:"backdrop_path"`
+	Parts        []TMDBCollectionPart `json:"parts"`
 }
 
 type TMDBCollectionPart struct {
@@ -442,16 +442,16 @@ func (t *TMDBCollectionPart) AsMedia() domain.Media {
 
 type TMDBMovieDetails struct {
 	TMDBContentDetails
-	Adult               bool                `json:"adult"`
-	BelongsToCollection *TMDBCollection     `json:"belongs_to_collection"`
-	Budget              uint32              `json:"budget"`
-	ImdbID              string              `json:"imdb_id"`
-	OriginalTitle       string              `json:"original_title"`
-	ReleaseDate         string              `json:"release_date"`
-	Revenue             uint32              `json:"revenue"`
-	Runtime             uint32              `json:"runtime"`
-	Title               string              `json:"title"`
-	Video               bool                `json:"video"`
+	Adult               bool            `json:"adult"`
+	BelongsToCollection *TMDBCollection `json:"belongs_to_collection"`
+	Budget              uint32          `json:"budget"`
+	ImdbID              string          `json:"imdb_id"`
+	OriginalTitle       string          `json:"original_title"`
+	ReleaseDate         string          `json:"release_date"`
+	Revenue             uint32          `json:"revenue"`
+	Runtime             uint32          `json:"runtime"`
+	Title               string          `json:"title"`
+	Video               bool            `json:"video"`
 
 	// Extra items because we use `append_to_response` on the request
 	ExternalIds TMDBExternalIdsMovie `json:"external_ids"`
