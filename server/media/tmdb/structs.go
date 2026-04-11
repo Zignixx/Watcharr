@@ -381,21 +381,77 @@ func (t *TMDBContentDetails) AsMedia() domain.Media {
 }
 
 //
+// Movie Collection
+//
+
+type TMDBCollection struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	PosterPath   string `json:"poster_path"`
+	BackdropPath string `json:"backdrop_path"`
+}
+
+type TMDBCollectionDetails struct {
+	ID           int                       `json:"id"`
+	Name         string                    `json:"name"`
+	Overview     string                    `json:"overview"`
+	PosterPath   string                    `json:"poster_path"`
+	BackdropPath string                    `json:"backdrop_path"`
+	Parts        []TMDBCollectionPart      `json:"parts"`
+}
+
+type TMDBCollectionPart struct {
+	ID               int     `json:"id"`
+	Title            string  `json:"title"`
+	Overview         string  `json:"overview"`
+	PosterPath       string  `json:"poster_path"`
+	BackdropPath     string  `json:"backdrop_path"`
+	ReleaseDate      string  `json:"release_date"`
+	VoteAverage      float64 `json:"vote_average"`
+	VoteCount        uint32  `json:"vote_count"`
+	Adult            bool    `json:"adult"`
+	GenreIds         []int   `json:"genre_ids"`
+	OriginalLanguage string  `json:"original_language"`
+	OriginalTitle    string  `json:"original_title"`
+	Popularity       float64 `json:"popularity"`
+}
+
+func (t *TMDBCollectionPart) AsMedia() domain.Media {
+	m := domain.Media{
+		IDs: domain.MediaIDs{
+			TMDB: t.ID,
+		},
+		Type:          domain.MediaTypeTMDBMovie,
+		Name:          t.Title,
+		Summary:       t.Overview,
+		ExtPosterPath: t.PosterPath,
+		Rating:        uint(t.VoteAverage * 10),
+		RatingCount:   uint(t.VoteCount),
+	}
+	if releaseDate, err := time.Parse("2006-01-02", t.ReleaseDate); err == nil {
+		m.ReleaseDate = releaseDate
+	} else {
+		slog.Error("AsMedia: Failed to parse collection part release date", "name", m.Name, "error", err)
+	}
+	return m
+}
+
+//
 // Movie Details
 //
 
 type TMDBMovieDetails struct {
 	TMDBContentDetails
-	Adult               bool   `json:"adult"`
-	BelongsToCollection any    `json:"belongs_to_collection"`
-	Budget              uint32 `json:"budget"`
-	ImdbID              string `json:"imdb_id"`
-	OriginalTitle       string `json:"original_title"`
-	ReleaseDate         string `json:"release_date"`
-	Revenue             uint32 `json:"revenue"`
-	Runtime             uint32 `json:"runtime"`
-	Title               string `json:"title"`
-	Video               bool   `json:"video"`
+	Adult               bool                `json:"adult"`
+	BelongsToCollection *TMDBCollection     `json:"belongs_to_collection"`
+	Budget              uint32              `json:"budget"`
+	ImdbID              string              `json:"imdb_id"`
+	OriginalTitle       string              `json:"original_title"`
+	ReleaseDate         string              `json:"release_date"`
+	Revenue             uint32              `json:"revenue"`
+	Runtime             uint32              `json:"runtime"`
+	Title               string              `json:"title"`
+	Video               bool                `json:"video"`
 
 	// Extra items because we use `append_to_response` on the request
 	ExternalIds TMDBExternalIdsMovie `json:"external_ids"`
@@ -415,6 +471,14 @@ func (t *TMDBMovieDetails) AsMedia() domain.Media {
 	// IDS
 	m.IDs.IMDB = t.ExternalIds.ImdbID
 	m.IDs.Wikidata = t.ExternalIds.WikidataID
+	// Collection info
+	if t.BelongsToCollection != nil {
+		m.Collection = &domain.MediaCollection{
+			ID:            t.BelongsToCollection.ID,
+			Name:          t.BelongsToCollection.Name,
+			ExtPosterPath: t.BelongsToCollection.PosterPath,
+		}
+	}
 	// Convert similar items to media too.
 	for i := range t.Similar.Results {
 		m.Similar = append(m.Similar, t.Similar.Results[i].AsMedia())

@@ -21,6 +21,7 @@ type FollowThoughts struct {
 	Thoughts     string               `json:"thoughts"`
 	Status       entity.WatchedStatus `json:"status"`
 	Rating       float64              `json:"rating"`
+	Activity     []entity.Activity    `json:"activity,omitempty"`
 }
 
 type Service struct {
@@ -149,11 +150,11 @@ func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId stri
 	// Get list of followeds watcheds for this content
 	var fw []entity.Watched
 	if mediaType == "game" {
-		res = s.db.Where("game_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
+		res = s.db.Where("game_id = ? AND user_id IN ?", contentOrGameId, followIds).Preload("Activity").Find(&fw)
 	} else if mediaType == "manga" {
-		res = s.db.Where("manga_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
+		res = s.db.Where("manga_id = ? AND user_id IN ?", contentOrGameId, followIds).Preload("Activity").Find(&fw)
 	} else {
-		res = s.db.Where("content_id = ? AND user_id IN ?", contentOrGameId, followIds).Find(&fw)
+		res = s.db.Where("content_id = ? AND user_id IN ?", contentOrGameId, followIds).Preload("Activity").Find(&fw)
 	}
 	if res.Error != nil {
 		slog.Error("getFollows: Error finding followed watcheds from db.", "error", res.Error)
@@ -173,7 +174,7 @@ func (s *Service) GetFollowsThoughts(userId uint, mediaType string, mediaId stri
 		if fu.ID == 0 {
 			continue
 		}
-		ft = append(ft, FollowThoughts{FollowedUser: fu, Thoughts: v.Thoughts, Status: v.Status, Rating: v.Rating})
+		ft = append(ft, FollowThoughts{FollowedUser: fu, Thoughts: v.Thoughts, Status: v.Status, Rating: v.Rating, Activity: v.Activity})
 	}
 	return ft, nil
 }

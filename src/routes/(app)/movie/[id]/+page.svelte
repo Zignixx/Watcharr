@@ -21,6 +21,7 @@
 	import ProvidersList from "@/lib/content/ProvidersList.svelte";
 	import Icon from "@/lib/Icon.svelte";
 	import SimilarContent from "@/lib/content/SimilarContent.svelte";
+	import CollectionContent from "@/lib/content/CollectionContent.svelte";
 	import RequestMovie from "@/lib/request/RequestMovie.svelte";
 	import Error from "@/lib/Error.svelte";
 	import FollowedThoughts from "@/lib/content/FollowedThoughts.svelte";
@@ -289,6 +290,10 @@
 			{:catch err}
 				<Error error={err} pretty="Failed to load cast!" />
 			{/await}
+
+			{#if movie.collection && movie.collectionParts}
+				<CollectionContent collection={movie.collection} parts={movie.collectionParts} />
+			{/if}
 
 			{#if movie.similar}
 				<SimilarContent similar={movie.similar} />

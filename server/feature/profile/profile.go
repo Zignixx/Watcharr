@@ -159,3 +159,83 @@ func (s *Service) getProfile(userId uint) (Profile, error) {
 	}
 	return profile, nil
 }
+
+// Gets profile data for a public (non-private) user
+func (s *Service) getPublicProfile(userId uint) (Profile, error) {
+	user := new(entity.User)
+	res := s.db.Model(&entity.User{}).Where("id = ? AND private = 0", userId).Take(&user)
+	if res.Error != nil {
+		slog.Error("Failed to get public profile:", "error", res.Error.Error())
+		return Profile{}, errors.New("failed to get profile")
+	}
+	watched := new([]entity.Watched)
+	res = s.db.Model(&entity.Watched{}).Preload("Content").Preload("Activity").Where("user_id = ?", userId).Find(&watched)
+	if res.Error != nil {
+		slog.Error("PublicProfile: Failed to get watched for processing:", "error", res.Error.Error())
+		return Profile{}, errors.New("failed to get watched for processing")
+	}
+	var (
+		showsWatched         int32
+		moviesWatched        int32
+		moviesWatchedRuntime uint32
+		showsWatchedRuntime  uint32
+		moviesPlannedRuntime uint32
+		showsPlannedRuntime  uint32
+	)
+	for _, w := range *watched {
+		if w.Status == entity.PLANNED {
+			if w.Content == nil {
+				continue
+			}
+			c := *w.Content
+			if c.Type == entity.SHOW {
+				if c.NumberOfEpisodes != 0 {
+					var showRuntime uint32 = 30
+					if c.Runtime != 0 {
+						showRuntime = c.Runtime
+					}
+					showsPlannedRuntime += showRuntime * c.NumberOfEpisodes
+				}
+			} else if c.Type == entity.MOVIE {
+				moviesPlannedRuntime += c.Runtime
+			}
+			continue
+		}
+
+		isFinished := false
+		if w.Status == entity.FINISHED {
+			isFinished = true
+		} else if *user.IncludePreviouslyWatched && s.hasBeenPreviouslyWatched(&w.Activity) {
+			isFinished = true
+		}
+		if isFinished {
+			if w.Content == nil {
+				continue
+			}
+			c := *w.Content
+			if c.Type == entity.SHOW {
+				showsWatched++
+				if c.NumberOfEpisodes != 0 {
+					var showRuntime uint32 = 30
+					if c.Runtime != 0 {
+						showRuntime = c.Runtime
+					}
+					showsWatchedRuntime += showRuntime * c.NumberOfEpisodes
+				}
+			} else if c.Type == entity.MOVIE {
+				moviesWatched++
+				moviesWatchedRuntime += c.Runtime
+			}
+		}
+	}
+	profile := Profile{
+		Joined:               user.CreatedAt,
+		ShowsWatched:         showsWatched,
+		MoviesWatched:        moviesWatched,
+		MoviesWatchedRuntime: moviesWatchedRuntime,
+		ShowsWatchedRuntime:  showsWatchedRuntime,
+		MoviesPlannedRuntime: moviesPlannedRuntime,
+		ShowsPlannedRuntime:  showsPlannedRuntime,
+	}
+	return profile, nil
+}

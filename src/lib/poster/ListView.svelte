@@ -154,6 +154,9 @@
 					<th class="col-added" onclick={() => toggleSort("added")}>
 						Added {sortKey === "added" ? (sortDir === "asc" ? "▲" : "▼") : ""}
 					</th>
+					{#if ownerItems}
+						<th class="col-activity">Activity</th>
+					{/if}
 				</tr>
 			</thead>
 			<tbody>
@@ -196,6 +199,23 @@
 								—
 							{/if}
 						</td>
+						{#if ownerItems}
+							{@const ow = getOwnerWatched(media)}
+							<td class="col-activity">
+								{#if ow?.activity?.length}
+									{@const last = ow.activity[ow.activity.length - 1]}
+									<span class="activity-badge" title="{ow.activity.length} activit{ow.activity.length === 1 ? 'y' : 'ies'}">
+										<Icon i="calendar" wh={12} />
+										{new Date(last.customDate || last.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+										{#if ow.activity.length > 1}
+											<em>×{ow.activity.length}</em>
+										{/if}
+									</span>
+								{:else}
+									—
+								{/if}
+							</td>
+						{/if}
 					</tr>
 				{/each}
 			</tbody>
@@ -371,6 +391,31 @@
 
 	.rating-val {
 		font-weight: 500;
+	}
+
+	.col-activity {
+		min-width: 90px;
+	}
+
+	.activity-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 12px;
+		fill: $text-color;
+		opacity: 0.7;
+
+		:global(svg) {
+			width: 12px;
+			height: 12px;
+			flex-shrink: 0;
+		}
+
+		em {
+			font-style: normal;
+			font-size: 10px;
+			opacity: 0.6;
+		}
 	}
 
 	@media screen and (max-width: 600px) {

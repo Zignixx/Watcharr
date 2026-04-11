@@ -1,18 +1,19 @@
 <script lang="ts">
-	import type { ContentType, PublicUser, WatchedStatus } from "@/types";
+	import type { Activity, ContentType, PublicUser, WatchedStatus } from "@/types";
 	import HorizontalList from "../HorizontalList.svelte";
 	import Modal from "../Modal.svelte";
 	import axios from "axios";
 	import Spinner from "../Spinner.svelte";
 	import Error from "../Error.svelte";
 	import Icon from "../Icon.svelte";
-	import { watchedStatuses } from "../util/helpers";
+	import { watchedStatuses, getOrdinalSuffix, months } from "../util/helpers";
 
 	interface FollowThoughts {
 		followedUser: PublicUser;
 		thoughts: string;
 		status: WatchedStatus;
 		rating: number;
+		activity?: Activity[];
 	}
 
 	interface Props {
@@ -32,6 +33,43 @@
 			)
 		).data;
 	}
+
+	function getActivitySummary(a: Activity): string {
+		switch (a?.type) {
+			case "ADDED_WATCHED":
+				return "Added to list";
+			case "RATING_CHANGED":
+				return a.data ? `Rated ${a.data}` : "Rated";
+			case "STATUS_CHANGED":
+			case "STATUS_CHANGED_AUTO":
+				if (a.data) {
+					try {
+						const data = JSON.parse(a.data);
+						return `Status: ${data.status || a.data}`;
+					} catch {
+						return `Status: ${a.data}`;
+					}
+				}
+				return "Status changed";
+			case "IMPORTED_WATCHED":
+			case "IMPORTED_WATCHED_JF":
+			case "IMPORTED_WATCHED_PLEX":
+				return "Synced";
+			case "IMPORTED_ADDED_WATCHED":
+			case "IMPORTED_ADDED_WATCHED_JF":
+			case "IMPORTED_ADDED_WATCHED_PLEX":
+				return "Watch date imported";
+			case "FINISHED":
+				return "Finished";
+			default:
+				return a.type?.replace(/_/g, " ").toLowerCase() || "Activity";
+		}
+	}
+
+	function formatDate(dateStr: string): string {
+		const d = new Date(dateStr);
+		return `${d.getDate()}${getOrdinalSuffix(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()}`;
+	}
 </script>
 
 {#await getFollowsThoughts()}
@@ -41,7 +79,7 @@
 		<HorizontalList title="Followed Thoughts">
 			{#each fts as ft}
 				<button
-					class={["thoughts-card plain", ft.thoughts ? "" : "no-thoughts"].join(
+					class={["thoughts-card plain", ft.thoughts || ft.activity?.length ? "" : "no-thoughts"].join(
 						" ",
 					)}
 					onclick={() => (modalShownFor = ft)}
@@ -60,6 +98,11 @@
 							</span>
 						{/if}
 					</div>
+					{#if ft.activity && ft.activity.length > 0}
+						<div class="watch-date">
+							Last: {formatDate(ft.activity[0].customDate || ft.activity[0].createdAt)}
+						</div>
+					{/if}
 					<div class="thought">
 						{ft.thoughts || "No thoughts yet."}
 					</div>
@@ -76,7 +119,24 @@
 		title={`${modalShownFor.followedUser.username}'s Thoughts`}
 		onClose={() => (modalShownFor = undefined)}
 	>
-		<span>{modalShownFor.thoughts}</span>
+		{#if modalShownFor.thoughts}
+			<span>{modalShownFor.thoughts}</span>
+		{:else}
+			<span style="opacity: 0.5;">No thoughts shared.</span>
+		{/if}
+		{#if modalShownFor.activity && modalShownFor.activity.length > 0}
+			<div class="modal-activity">
+				<h4>Activity</h4>
+				<div class="activity-list">
+					{#each modalShownFor.activity.slice(0, 20) as a}
+						<div class="activity-item">
+							<span class="activity-msg">{getActivitySummary(a)}</span>
+							<span class="activity-date">{formatDate(a.customDate || a.createdAt)}</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</Modal>
 {/if}
 
@@ -151,6 +211,12 @@
 			}
 		}
 
+		.watch-date {
+			font-size: 12px;
+			opacity: 0.6;
+			margin-bottom: 4px;
+		}
+
 		&:hover {
 			color: $bg-color;
 			fill: $bg-color;
@@ -160,5 +226,46 @@
 				-webkit-text-stroke: 1px $bg-color;
 			}
 		}
+	}
+
+	:global(.modal-activity) {
+		margin-top: 16px;
+
+		h4 {
+			margin-bottom: 8px;
+			opacity: 0.7;
+			font-size: 13px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+	}
+
+	:global(.activity-list) {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	:global(.activity-item) {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 6px 10px;
+		background: rgba(255, 255, 255, 0.05);
+		border-radius: 6px;
+		font-size: 13px;
+	}
+
+	:global(.activity-msg) {
+		text-transform: capitalize;
+	}
+
+	:global(.activity-date) {
+		opacity: 0.5;
+		font-size: 12px;
+		white-space: nowrap;
+		margin-left: 12px;
 	}
 </style>

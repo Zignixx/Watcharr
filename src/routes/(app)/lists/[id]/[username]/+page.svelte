@@ -5,7 +5,7 @@
 	import UserAvatar from "@/lib/img/UserAvatar.svelte";
 	import { followUser, unfollowUser } from "@/lib/util/api.js";
 	import { clearActiveFilters, store } from "@/store.svelte.js";
-	import type { Media, MediaTypeE, PublicUser, Watched, Tier, Tierlist, SupportedMedia } from "@/types.js";
+	import type { Media, MediaTypeE, PublicUser, Watched, Tier, Tierlist, SupportedMedia, Profile } from "@/types.js";
 	import axios, { type GenericAbortSignal } from "axios";
 	import { publicAxios, getToken } from "@/lib/util/api.js";
 	import { onDestroy, untrack } from "svelte";
@@ -40,6 +40,19 @@
 	let tiersLoading = $state(false);
 	let tiersError = $state(false);
 	let tierlistContainer: HTMLDivElement | undefined = $state(undefined);
+
+	// Tierlist search (highlight matching items)
+	let tierSearch = $state("");
+
+	// Public profile stats
+	let publicProfile: Profile | undefined = $state();
+	let profileLoading = $state(false);
+
+	// Time format cycling: 0=auto, 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years
+	let movieWatchedFormat = $state(0);
+	let showWatchedFormat = $state(0);
+	let moviePlannedFormat = $state(0);
+	let showPlannedFormat = $state(0);
 
 	// Map of own watched data keyed by "tmdbId-type" or "igdbId-game"
 	let myWatchedMap: Map<string, Watched> = $state(new Map());
@@ -267,6 +280,55 @@
 			.data as PublicUser;
 	}
 
+	async function loadPublicProfile() {
+		if (!meta.id || !meta.username) return;
+		profileLoading = true;
+		try {
+			publicProfile = (await publicAxios.get(`/profile/${meta.id}/${meta.username}`)).data as Profile;
+		} catch {
+			publicProfile = undefined;
+		}
+		profileLoading = false;
+	}
+
+	function toFormattedTimeLong(m: number) {
+		const countInMinutes: [string, number][] = [
+			["month", 43200],
+			["week", 10080],
+			["day", 1440],
+			["hour", 60],
+		];
+		let ansString = "";
+		let tmp;
+		for (const c of countInMinutes) {
+			tmp = Math.floor(m / c[1]);
+			if (tmp) ansString += `${tmp} ${c[0]}${tmp >= 2 ? "s, " : ", "}`;
+			m -= tmp * c[1];
+		}
+		if (!ansString) return "0 hours";
+		return ansString.slice(0, -2);
+	}
+
+	function formatTime(m: number, format: number): string {
+		if (format === 0) return toFormattedTimeLong(m);
+		const formatters: [string, number][] = [
+			["minute", 1],
+			["hour", 60],
+			["day", 1440],
+			["week", 10080],
+			["month", 43200],
+			["year", 525600],
+		];
+		const [unit, divisor] = formatters[format - 1];
+		const val = Math.round((m / divisor) * 10) / 10;
+		if (val === 0 && m === 0) return `0 ${unit}s`;
+		return `${val.toLocaleString()} ${unit}${val !== 1 ? "s" : ""}`;
+	}
+
+	function cycleFormat(current: number): number {
+		return (current + 1) % 7;
+	}
+
 	async function follow() {
 		followBtnDisabled = true;
 		console.log(isFollowing);
@@ -289,6 +351,7 @@
 					console.error("getPublicUser failed!", err);
 				});
 			loadMyWatchedData();
+			loadPublicProfile();
 			loadPublicTierlists().then(() => loadPublicTierlist());
 		}
 	});
@@ -348,6 +411,39 @@
 	</div>
 </div>
 
+{#if publicProfile}
+	<div class="compact-stats">
+		<button class="compact-stat large" onclick={() => {}}>
+			<span class="compact-stat-value">{publicProfile.moviesWatched}</span>
+			<span class="compact-stat-label">Movies</span>
+		</button>
+		<button class="compact-stat large" onclick={() => {}}>
+			<span class="compact-stat-value">{publicProfile.showsWatched}</span>
+			<span class="compact-stat-label">Shows</span>
+		</button>
+		<span class="compact-stat-sep"></span>
+		<button class="compact-stat clickable" onclick={() => movieWatchedFormat = cycleFormat(movieWatchedFormat)}>
+			<span class="compact-stat-value">{formatTime(publicProfile.moviesWatchedRuntime, movieWatchedFormat)}</span>
+			<span class="compact-stat-label">Movies watched</span>
+		</button>
+		<button class="compact-stat clickable" onclick={() => showWatchedFormat = cycleFormat(showWatchedFormat)}>
+			<span class="compact-stat-value">{formatTime(publicProfile.showsWatchedRuntime, showWatchedFormat)}</span>
+			<span class="compact-stat-label">Shows watched</span>
+		</button>
+		{#if publicProfile.moviesPlannedRuntime > 0 || publicProfile.showsPlannedRuntime > 0}
+			<span class="compact-stat-sep"></span>
+			<button class="compact-stat clickable" onclick={() => moviePlannedFormat = cycleFormat(moviePlannedFormat)}>
+				<span class="compact-stat-value">{formatTime(publicProfile.moviesPlannedRuntime, moviePlannedFormat)}</span>
+				<span class="compact-stat-label">Movies planned</span>
+			</button>
+			<button class="compact-stat clickable" onclick={() => showPlannedFormat = cycleFormat(showPlannedFormat)}>
+				<span class="compact-stat-value">{formatTime(publicProfile.showsPlannedRuntime, showPlannedFormat)}</span>
+				<span class="compact-stat-label">Shows planned</span>
+			</button>
+		{/if}
+	</div>
+{/if}
+
 {#if publicTierlists.length > 0 || publicTiers.length > 0 || !tiersError}
 	<div class="view-tabs">
 		<button
@@ -386,6 +482,15 @@
 	{#if tiersLoading}
 		<Spinner />
 	{:else if publicTiers.length > 0}
+		<div class="tier-search-bar">
+			<Icon i="search" wh={14} />
+			<input type="text" placeholder="Search tierlist..." bind:value={tierSearch} />
+			{#if tierSearch}
+				<button class="tier-search-clear" onclick={() => tierSearch = ""}>
+					<Icon i="close" wh={12} />
+				</button>
+			{/if}
+		</div>
 		<div class="public-tierlist" bind:this={tierlistContainer}>
 			{#each publicTiers as tier (tier.id)}
 				<div class="tier-row">
@@ -401,7 +506,9 @@
 								{@const poster = getTierItemPoster(item)}
 								{@const title = getTierItemTitle(item)}
 								{@const link = getTierItemLink(item)}
-								<a href={link} class="tier-item" title={title} oncontextmenu={(e) => handleTierCtxMenu(e, item)}>
+								{@const isHighlighted = tierSearch.trim() && title.toLowerCase().includes(tierSearch.trim().toLowerCase())}
+								{@const isDimmed = tierSearch.trim() && !isHighlighted}
+								<a href={link} class="tier-item" class:highlighted={isHighlighted} class:dimmed={isDimmed} title={title} oncontextmenu={(e) => handleTierCtxMenu(e, item)}>
 									<div class="tier-item-poster">
 										{#if poster}
 											<img src={poster} alt={title} loading="lazy" />
@@ -601,8 +708,62 @@
 	.view-tabs {
 		display: flex;
 		justify-content: center;
-		gap: 4px;
-		margin: 0 20px 16px;
+	}
+
+	.compact-stats {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		margin: 4px 20px 12px;
+		flex-wrap: wrap;
+	}
+
+	.compact-stat {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 8px 14px;
+		background: rgba(128, 128, 128, 0.08);
+		border: 1px solid rgba(128, 128, 128, 0.1);
+		border-radius: 8px;
+		color: $text-color !important;
+		min-width: 0;
+
+		&.large .compact-stat-value {
+			font-size: 22px;
+			font-weight: 700;
+		}
+
+		&.clickable {
+			cursor: pointer;
+			user-select: none;
+			transition: background 150ms;
+
+			&:hover {
+				background: rgba(128, 128, 128, 0.15);
+			}
+		}
+	}
+
+	.compact-stat-value {
+		font-weight: 600;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+
+	.compact-stat-label {
+		font-size: 10px;
+		opacity: 0.5;
+		white-space: nowrap;
+		margin-top: 1px;
+	}
+
+	.compact-stat-sep {
+		width: 1px;
+		height: 28px;
+		background: rgba(128, 128, 128, 0.2);
+		margin: 0 4px;
 	}
 
 	.view-tab {
@@ -671,6 +832,47 @@
 		padding: 0 24px 24px;
 	}
 
+	.tier-search-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: 320px;
+		margin: 0 auto 12px;
+		padding: 6px 12px;
+		background: rgba(128, 128, 128, 0.08);
+		border: 1px solid rgba(128, 128, 128, 0.15);
+		border-radius: 8px;
+		fill: rgba(255, 255, 255, 0.4);
+
+		input {
+			flex: 1;
+			background: none;
+			border: none;
+			outline: none;
+			color: $text-color;
+			font-size: 13px;
+			padding: 0;
+
+			&::placeholder {
+				color: rgba(255, 255, 255, 0.3);
+			}
+		}
+	}
+
+	.tier-search-clear {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 2px;
+		fill: rgba(255, 255, 255, 0.4);
+		display: flex;
+		align-items: center;
+
+		&:hover {
+			fill: rgba(255, 255, 255, 0.7);
+		}
+	}
+
 	.tier-row {
 		display: flex;
 		border-bottom: 1px solid rgba(128, 128, 128, 0.12);
@@ -731,10 +933,21 @@
 		width: 62px;
 		text-decoration: none;
 		color: $text-color;
-		transition: transform 120ms ease;
+		transition: transform 120ms ease, opacity 200ms ease;
 
 		&:hover {
 			transform: translateY(-2px);
+		}
+
+		&.highlighted {
+			outline: 2px solid rgba(76, 175, 80, 0.8);
+			outline-offset: 1px;
+			border-radius: 6px;
+			z-index: 1;
+		}
+
+		&.dimmed {
+			opacity: 0.2;
 		}
 	}
 

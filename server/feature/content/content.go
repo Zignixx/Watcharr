@@ -749,3 +749,20 @@ func (s *Service) Regions() (tmdb.TMDBRegions, error) {
 	}
 	return *resp, nil
 }
+
+// CollectionDetails fetches a TMDB collection by ID.
+func (s *Service) CollectionDetails(id string) (tmdb.TMDBCollectionDetails, error) {
+	resp := new(tmdb.TMDBCollectionDetails)
+	cacheKey := cache.CreateCacheKey("CollectionDetails", id)
+	if cache.GetCache(ContentStore, cacheKey, &resp) {
+		slog.Debug("CollectionDetails: Returning cache.")
+		return *resp, nil
+	}
+	err := s.tmdb.Request("/collection/"+id, map[string]string{}, &resp)
+	if err != nil {
+		slog.Error("CollectionDetails: Failed!", "id", id, "error", err)
+		return tmdb.TMDBCollectionDetails{}, errors.New("failed to get collection details")
+	}
+	ContentStore.Set(cacheKey, resp, time.Hour*24)
+	return *resp, nil
+}

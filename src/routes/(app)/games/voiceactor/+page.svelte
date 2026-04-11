@@ -36,13 +36,15 @@
 		promptCharacter: string;
 		/** The show that character is from */
 		promptShow: string;
-		/** Actor photo (TMDB) */
-		actorPhoto: string;
+		/** Prompt character image (Jikan) */
+		promptCharImage: string | null;
 		/** For display after answer */
 		actorName: string;
 		/** Question text */
 		question: string;
 		options: string[];
+		/** Character image URLs per option (from Jikan) */
+		optionImages: (string | null)[];
 		correctIndex: number;
 		explanation: string;
 	}
@@ -77,6 +79,98 @@
 	let creditsCache: Map<string, ShowCredits> = new Map();
 	let actorRoles: ActorRoleMap = new Map();
 	let usedQuestionKeys = new Set<string>();
+
+	// --- Jikan character image cache & rate limiter ---
+	let charImageCache: Map<string, string | null> = new Map();
+	let jikanLastCall = 0;
+	const JIKAN_MIN_INTERVAL = 500; // 2 req/s (safe under Jikan's 3/s limit)
+	const JIKAN_MAX_RETRIES = 3;
+
+	/** Clean character name: strip parenthesized suffixes like "(voice)" and trim */
+	function cleanCharName(raw: string): string {
+		return raw.replace(/\s*\([^)]*\)\s*/g, "").trim();
+	}
+
+	/** Rate-limited wait before next Jikan request */
+	async function jikanRateWait(): Promise<void> {
+		const now = Date.now();
+		const waitMs = Math.max(0, JIKAN_MIN_INTERVAL - (now - jikanLastCall));
+		if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+		jikanLastCall = Date.now();
+	}
+
+	/** Rate-limited fetch of character image from Jikan API v4 with retry on 429 */
+	async function fetchCharImage(rawName: string): Promise<string | null> {
+		const name = cleanCharName(rawName);
+		if (!name) return null;
+		if (charImageCache.has(name)) return charImageCache.get(name)!;
+
+		for (let attempt = 0; attempt < JIKAN_MAX_RETRIES; attempt++) {
+			await jikanRateWait();
+			try {
+				const resp = await fetch(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(name)}`, {
+					signal: AbortSignal.timeout(8000),
+				});
+				if (resp.status === 429) {
+					// Back off exponentially: 2s, 4s, 8s
+					const backoff = 2000 * Math.pow(2, attempt);
+					jikanLastCall = Date.now() + backoff;
+					await new Promise((r) => setTimeout(r, backoff));
+					continue;
+				}
+				if (!resp.ok) { charImageCache.set(name, null); return null; }
+				const json = await resp.json();
+				const data: any[] = json?.data ?? [];
+				const lowerName = name.toLowerCase();
+				const match = data.find((d: any) => (d.name ?? "").toLowerCase() === lowerName);
+				const url = match?.images?.jpg?.image_url ?? match?.images?.webp?.image_url ?? null;
+				charImageCache.set(name, url);
+				return url;
+			} catch {
+				if (attempt === JIKAN_MAX_RETRIES - 1) {
+					charImageCache.set(name, null);
+					return null;
+				}
+				await new Promise((r) => setTimeout(r, 1000));
+			}
+		}
+		charImageCache.set(name, null);
+		return null;
+	}
+
+	/** Fetch images for an array of character names (sequential, rate-limit aware) */
+	async function fetchCharImages(names: string[], onProgress?: (done: number, total: number) => void): Promise<(string | null)[]> {
+		const results: (string | null)[] = [];
+		for (let i = 0; i < names.length; i++) {
+			results.push(await fetchCharImage(names[i]));
+			onProgress?.(i + 1, names.length);
+		}
+		return results;
+	}
+
+	/** Pre-fetch Jikan images for all characters likely to appear in questions */
+	async function prefetchCharacterImages() {
+		// Collect unique character names from actors with ≥2 roles (question-relevant)
+		const charNames = new Set<string>();
+		for (const [, actor] of actorRoles) {
+			if (actor.roles.length >= 2) {
+				for (const r of actor.roles) charNames.add(r.character);
+			}
+		}
+		// Filter out already cached
+		const toFetch = [...charNames].filter((n) => !charImageCache.has(cleanCharName(n)));
+		if (toFetch.length === 0) return;
+
+		await fetchCharImages(toFetch, (done, total) => {
+			loadingMsg = `Loading character images (${done}/${total})...`;
+		});
+	}
+
+	/** Extract raw character name from option string like "Eren Yeager (Attack on Titan)" */
+	function extractCharName(opt: string): string {
+		const match = opt.match(/^(.+?)\s*\(/);
+		return match ? match[1].trim() : opt.trim();
+	}
 
 	let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
 	let pendingAction: (() => void) | null = null;
@@ -263,10 +357,11 @@
 				mode: "who_else",
 				promptCharacter: promptRole.character,
 				promptShow: promptRole.showName,
-				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				promptCharImage: null,
 				actorName: actor.actorName,
 				question: `The voice actor of "${promptRole.character}" (${promptRole.showName}) also voices which of these characters?`,
 				options: opts,
+				optionImages: [],
 				correctIndex: correctIdx,
 				explanation: `${actor.actorName} voices both "${promptRole.character}" in ${promptRole.showName} and "${answerRole.character}" in ${answerRole.showName}.`,
 			};
@@ -311,10 +406,11 @@
 				mode: "odd_character",
 				promptCharacter: sameRoles[0].character,
 				promptShow: sameRoles[0].showName,
-				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				promptCharImage: null,
 				actorName: actor.actorName,
 				question: `3 of these characters share the same voice actor. Which one does NOT?`,
 				options: opts,
+				optionImages: [],
 				correctIndex: correctIdx,
 				explanation: `${actor.actorName} voices ${sameRoles.map((r) => `"${r.character}" (${r.showName})`).join(", ")} — but NOT "${oddChar}".`,
 			};
@@ -370,10 +466,11 @@
 				mode: "match_character",
 				promptCharacter: promptChar,
 				promptShow: promptShow,
-				actorPhoto: `https://image.tmdb.org/t/p/w185${actor.photo}`,
+				promptCharImage: null,
 				actorName: actor.actorName,
 				question: `In "${targetShow}", which character is voiced by the same actor as "${promptChar}" (${promptShow})?`,
 				options: opts,
+				optionImages: [],
 				correctIndex: correctIdx,
 				explanation: `${actor.actorName} voices "${promptChar}" in ${promptShow} and "${targetChar}" in ${targetShow}.`,
 			};
@@ -401,6 +498,11 @@
 		}
 
 		if (!rd) return false;
+
+		// Fetch Jikan character image for prompt character + all options
+		rd.promptCharImage = await fetchCharImage(rd.promptCharacter);
+		const charNames = rd.options.map(extractCharName);
+		rd.optionImages = await fetchCharImages(charNames);
 
 		roundData = rd;
 		selectedAnswer = null;
@@ -434,6 +536,10 @@
 		}));
 		loadingMsg = "Building questions...";
 		buildActorRoleMap();
+
+		// Pre-fetch character images for all question-relevant characters
+		loadingMsg = "Loading character images...";
+		await prefetchCharacterImages();
 
 		loading = false;
 		loadingMsg = "";
@@ -545,8 +651,8 @@
 		</div>
 
 		<div class="character-card">
-			{#if roundData.actorPhoto}
-				<img src={roundData.actorPhoto} alt="Voice Actor" class="actor-photo" />
+			{#if roundData.promptCharImage}
+				<img src={roundData.promptCharImage} alt={roundData.promptCharacter} class="actor-photo" />
 			{/if}
 			<div class="character-info">
 				<p class="question-text">{roundData.question}</p>
@@ -562,6 +668,9 @@
 					disabled={answered}
 					onclick={() => selectAnswer(i)}
 				>
+					{#if roundData.optionImages?.[i]}
+						<img src={roundData.optionImages[i]} alt="" class="option-char-img" />
+					{/if}
 					<span class="option-label">{opt}</span>
 				</button>
 			{/each}
@@ -669,9 +778,11 @@
 	.options-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
 	.option-card {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 16px 12px;
+		gap: 8px;
+		padding: 12px 10px;
 		border-radius: 12px;
 		background: $accent-color;
 		border: 2px solid $bg-color-accent;
@@ -684,7 +795,15 @@
 		&.wrong { border-color: #ff6b6b; background: rgba(255,107,107,0.15); }
 		&:disabled { cursor: default; }
 	}
-	.option-label { font-size: 14px; font-weight: 600; color: $text-color; line-height: 1.4; }
+	.option-char-img {
+		width: 48px;
+		height: 48px;
+		object-fit: cover;
+		border-radius: 50%;
+		border: 2px solid $bg-color-accent;
+		flex-shrink: 0;
+	}
+	.option-label { font-size: 13px; font-weight: 600; color: $text-color; line-height: 1.4; }
 
 	.round-feedback { text-align: center; display: flex; flex-direction: column; gap: 6px; }
 	.feedback-correct { font-size: 16px; font-weight: 700; color: #51cf66; }

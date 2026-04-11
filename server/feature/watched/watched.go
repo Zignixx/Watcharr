@@ -175,6 +175,7 @@ func (s *Service) getPublicWatched(
 		Preload("Tags").
 		Preload("WatchedSeasons").
 		Preload("WatchedEpisodes").
+		Preload("Activity").
 		// Refine our results first (filters, sort);
 		Scopes(
 			watchedRefine(wr),

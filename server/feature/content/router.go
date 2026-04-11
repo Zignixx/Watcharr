@@ -80,6 +80,33 @@ func (r *Router) GetMovieDetails(c *gin.Context) {
 		return
 	}
 	contentAsMedia := content.AsMedia()
+
+	// Fetch collection parts if movie belongs to a collection
+	addListCalls := []*addedtocontent.AddListCall[domain.Media]{
+		addedtocontent.NewAddListCall(
+			contentAsMedia.Similar,
+			func(i int, w *entity.Watched) {
+				contentAsMedia.Similar[i].Watched = domain.NewWatchedDtoForLists(w)
+			},
+		),
+	}
+	if contentAsMedia.Collection != nil && contentAsMedia.Collection.ID != 0 {
+		collDetails, collErr := r.cs.CollectionDetails(strconv.Itoa(contentAsMedia.Collection.ID))
+		if collErr == nil {
+			for _, part := range collDetails.Parts {
+				contentAsMedia.CollectionParts = append(contentAsMedia.CollectionParts, part.AsMedia())
+			}
+			addListCalls = append(addListCalls, addedtocontent.NewAddListCall(
+				contentAsMedia.CollectionParts,
+				func(i int, w *entity.Watched) {
+					contentAsMedia.CollectionParts[i].Watched = domain.NewWatchedDtoForLists(w)
+				},
+			))
+		} else {
+			slog.Error("GetMovieDetails: Failed to get collection details", "error", collErr)
+		}
+	}
+
 	if err := addedtocontent.AddSingularAndList(
 		r.wp,
 		userId,
@@ -87,14 +114,7 @@ func (r *Router) GetMovieDetails(c *gin.Context) {
 		func(w *entity.Watched) {
 			contentAsMedia.Watched = domain.NewWatchedDtoForContentPage(w)
 		},
-		[]*addedtocontent.AddListCall[domain.Media]{
-			addedtocontent.NewAddListCall(
-				contentAsMedia.Similar,
-				func(i int, w *entity.Watched) {
-					contentAsMedia.Similar[i].Watched = domain.NewWatchedDtoForLists(w)
-				},
-			),
-		},
+		addListCalls,
 	); err != nil {
 		slog.Error("GetMovieDetails: Failed to add watched to content!", "error", err)
 		c.JSON(

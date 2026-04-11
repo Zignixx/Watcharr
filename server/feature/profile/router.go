@@ -2,6 +2,7 @@ package profile
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sbondCo/Watcharr/feature/auth/authmiddleware"
@@ -21,6 +22,9 @@ func NewRouter(br *router.BaseRouter, service *Service) *Router {
 }
 
 func (r *Router) AddRoutes() {
+	// Public route
+	r.br.Router.GET("/profile/:userId/:username", r.GetPublicProfile)
+
 	profile := r.br.Router.Group("/profile").Use(authmiddleware.AuthRequired(nil, r.br.Cfg))
 
 	// Get user profile details
@@ -33,6 +37,21 @@ func (r *Router) GetProfile(c *gin.Context) {
 	response, err := r.service.getProfile(userId)
 	if err != nil {
 		c.JSON(http.StatusForbidden, router.ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// Get public user profile details
+func (r *Router) GetPublicProfile(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("userId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, router.ErrorResponse{Error: "invalid user id"})
+		return
+	}
+	response, err := r.service.getPublicProfile(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, router.ErrorResponse{Error: err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, response)

@@ -407,6 +407,8 @@ export interface Media {
 	mangaVolumes?: number;
 	mangaStatus?: string;
 	mangaAuthors?: string[];
+	collection?: MediaCollection;
+	collectionParts?: Media[];
 }
 
 export interface RecommendationSource {
@@ -457,6 +459,12 @@ export interface MediaSeason {
 	number: number;
 	episodeCount: number;
 	releaseDate?: string;
+}
+
+export interface MediaCollection {
+	id: number;
+	name: string;
+	extPosterPath?: string;
 }
 
 interface PaginationParams {

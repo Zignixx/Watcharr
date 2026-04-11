@@ -58,6 +58,9 @@
 	// Context menu state
 	let ctxMenu: { x: number; y: number; watched: Watched; contentId: number; contentType: SupportedMedia; mediaName: string } | undefined = $state(undefined);
 
+	// Tier search (highlights matching items in tiers)
+	let tierSearch = $state("");
+
 	function getItemContentInfo(item: any): { contentId: number; contentType: SupportedMedia; mediaName: string } | undefined {
 		const w = item.watched || item;
 		if (w.content) {
@@ -92,6 +95,13 @@
 
 	function handleTierItemContextMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
+		if (editMode) {
+			// In edit mode, show tier-assign menu for quick reassignment
+			const watchedId = getWatchedId(item);
+			const title = getItemTitle(item);
+			tierAssignMenu = { x: e.clientX, y: e.clientY, watchedId, mediaName: title };
+			return;
+		}
 		const w = getItemWatched(item);
 		const info = getItemContentInfo(item);
 		if (!w || !info) return;
@@ -122,6 +132,119 @@
 			});
 		}
 		ctxMenu = undefined;
+	}
+
+	// Tier assignment context menu for untiered items
+	let tierAssignMenu: { x: number; y: number; watchedId: number; mediaName: string } | undefined = $state(undefined);
+	let tierAssignMenuEl: HTMLDivElement | undefined = $state(undefined);
+
+	function handleUntieredContextMenu(e: MouseEvent, item: any) {
+		e.preventDefault();
+		if (!editMode) {
+			// If not in edit mode, show the normal PosterContextMenu
+			handleTierItemContextMenu(e, item);
+			return;
+		}
+		const watchedId = getWatchedId(item);
+		const title = getItemTitle(item);
+		tierAssignMenu = { x: e.clientX, y: e.clientY, watchedId, mediaName: title };
+	}
+
+	function closeTierAssignMenu() {
+		tierAssignMenu = undefined;
+	}
+
+	function handleTierAssignOutsideClick(e: MouseEvent) {
+		if (tierAssignMenuEl && !tierAssignMenuEl.contains(e.target as Node)) {
+			closeTierAssignMenu();
+		}
+	}
+
+	// Reposition tier-assign menu within viewport
+	$effect(() => {
+		if (tierAssignMenu && tierAssignMenuEl) {
+			const rect = tierAssignMenuEl.getBoundingClientRect();
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			let mx = tierAssignMenu.x;
+			let my = tierAssignMenu.y;
+			if (mx + rect.width > vw) mx = vw - rect.width - 10;
+			if (my + rect.height > vh) my = vh - rect.height - 10;
+			if (mx < 0) mx = 10;
+			if (my < 0) my = 10;
+			tierAssignMenuEl.style.left = mx + 'px';
+			tierAssignMenuEl.style.top = my + 'px';
+		}
+	});
+
+	function assignToTier(tierId: number) {
+		if (!tierAssignMenu) return;
+		const { watchedId } = tierAssignMenu;
+
+		// Check if item is in untiered
+		let watchedData = untieredWatched.find((w) => getWatchedId(w) === watchedId);
+		let sourceTierId: number | null = null;
+
+		if (watchedData) {
+			// Remove from untiered
+			untieredWatched = untieredWatched.filter((w) => getWatchedId(w) !== watchedId);
+		} else {
+			// Find in existing tiers
+			for (const tier of tiers) {
+				if (tier.tierItems) {
+					const idx = tier.tierItems.findIndex((ti) => getWatchedId(ti) === watchedId);
+					if (idx >= 0) {
+						watchedData = tier.tierItems[idx];
+						sourceTierId = tier.id;
+						tier.tierItems = tier.tierItems.filter((_, i) => i !== idx);
+						break;
+					}
+				}
+			}
+		}
+
+		if (!watchedData) { closeTierAssignMenu(); return; }
+
+		// Don't re-assign to same tier
+		if (sourceTierId === tierId) { closeTierAssignMenu(); return; }
+
+		// Add to target tier at the end
+		const targetTier = tiers.find((t) => t.id === tierId);
+		if (targetTier) {
+			if (!targetTier.tierItems) targetTier.tierItems = [];
+			const position = targetTier.tierItems.length;
+			targetTier.tierItems = [...targetTier.tierItems, {
+				watchedId,
+				tierId,
+				position,
+				watched: watchedData,
+			}];
+		}
+
+		tiers = [...tiers];
+		closeTierAssignMenu();
+	}
+
+	function openPosterCtxFromTierAssign() {
+		if (!tierAssignMenu) return;
+		const { watchedId, x, y } = tierAssignMenu;
+		// Look in untiered first, then in tiers
+		let item: any = untieredWatched.find((w) => getWatchedId(w) === watchedId);
+		if (!item) {
+			for (const tier of tiers) {
+				if (tier.tierItems) {
+					item = tier.tierItems.find((ti) => getWatchedId(ti) === watchedId);
+					if (item) break;
+				}
+			}
+		}
+		if (!item) { closeTierAssignMenu(); return; }
+		const w = getItemWatched(item);
+		const info = getItemContentInfo(item);
+		closeTierAssignMenu();
+		if (w && info) {
+			ctxMenu = { x, y, watched: w, ...info };
+		}
 	}
 
 	// Gradient presets: arrays of HSL color stops
@@ -455,6 +578,9 @@
 	type UntieredTypeFilter = "all" | "movie" | "show" | "anime" | "game" | "manga";
 	let activeTypeFilter: UntieredTypeFilter = $state("all");
 
+	// Search filter for untiered items
+	let untieredSearch: string = $state("");
+
 	const typeFilterLabels: { value: UntieredTypeFilter; label: string }[] = [
 		{ value: "all", label: "All" },
 		{ value: "movie", label: "Movies" },
@@ -481,6 +607,10 @@
 		}
 		if (activeStatusFilters.length > 0) {
 			items = items.filter((w: any) => activeStatusFilters.includes(w.status));
+		}
+		if (untieredSearch.trim()) {
+			const q = untieredSearch.trim().toLowerCase();
+			items = items.filter((w: any) => getItemTitle(w).toLowerCase().includes(q));
 		}
 		return items;
 	});
@@ -951,6 +1081,47 @@
 		return item.id;
 	}
 
+	// Auto-scroll while dragging near viewport edges
+	let autoScrollRAF: number | null = null;
+	const SCROLL_ZONE = 80;
+	const SCROLL_SPEED = 12;
+
+	function autoScrollTick(clientY: number) {
+		if (!dragItem) {
+			if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+			return;
+		}
+		const vh = window.innerHeight;
+		let delta = 0;
+		if (clientY < SCROLL_ZONE) {
+			delta = -SCROLL_SPEED * (1 - clientY / SCROLL_ZONE);
+		} else if (clientY > vh - SCROLL_ZONE) {
+			delta = SCROLL_SPEED * (1 - (vh - clientY) / SCROLL_ZONE);
+		}
+		if (delta !== 0) {
+			window.scrollBy(0, delta);
+		}
+		autoScrollRAF = requestAnimationFrame(() => autoScrollTick(clientY));
+	}
+
+	function startAutoScroll(clientY: number) {
+		if (autoScrollRAF) cancelAnimationFrame(autoScrollRAF);
+		autoScrollRAF = requestAnimationFrame(() => autoScrollTick(clientY));
+	}
+
+	function stopAutoScroll() {
+		if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+	}
+
+	function handlePageDragOver(e: DragEvent) {
+		if (!editMode || !dragItem) return;
+		startAutoScroll(e.clientY);
+	}
+
+	function handlePageDrop(e: DragEvent) {
+		stopAutoScroll();
+	}
+
 	// Drag and Drop
 	function onDragStart(
 		e: DragEvent,
@@ -1069,6 +1240,7 @@
 		dragItem = null;
 		dragOverTierId = null;
 		dragOverIndex = null;
+		stopAutoScroll();
 	}
 
 	function onDropToUntiered(e: DragEvent) {
@@ -1106,6 +1278,7 @@
 		dragItem = null;
 		dragOverTierId = null;
 		dragOverIndex = null;
+		stopAutoScroll();
 	}
 
 	// === Touch drag support for mobile ===
@@ -1161,6 +1334,9 @@
 		const touch = e.touches[0];
 		touchDragEl.style.left = (touch.clientX - touchOffsetX) + 'px';
 		touchDragEl.style.top = (touch.clientY - touchOffsetY) + 'px';
+
+		// Auto-scroll near edges
+		startAutoScroll(touch.clientY);
 
 		// Find element under finger (hide clone temporarily)
 		touchDragEl.style.display = 'none';
@@ -1295,6 +1471,7 @@
 		dragOverTierId = null;
 		dragOverIndex = null;
 		touchOverUntiered = false;
+		stopAutoScroll();
 	}
 
 	// Store all watched data for lookup during drag/drop
@@ -1440,7 +1617,7 @@
 	<title>Tierlist</title>
 </svelte:head>
 
-<div class="tierlist-page" class:edit-mode={editMode}>
+<div class="tierlist-page" class:edit-mode={editMode} ondragover={handlePageDragOver} ondrop={handlePageDrop}>
 	<div class="tierlist-header">
 		<div class="tierlist-selector">
 			{#each tierlists as tl (tl.id)}
@@ -1505,6 +1682,17 @@
 	{#if loading}
 		<Spinner />
 	{:else}
+		{#if tiers.length > 0}
+			<div class="tier-search-bar">
+				<Icon i="search" wh={14} />
+				<input type="text" placeholder="Search tierlist..." bind:value={tierSearch} />
+				{#if tierSearch}
+					<button class="tier-search-clear" onclick={() => tierSearch = ""}>
+						<Icon i="close" wh={12} />
+					</button>
+				{/if}
+			</div>
+		{/if}
 		<div class="tierlist-container" bind:this={tierlistContainer}>
 			{#each tiers as tier, tierIdx (tier.id)}
 				<div
@@ -1571,6 +1759,8 @@
 								{@const poster = getItemPoster(item)}
 								{@const title = getItemTitle(item)}
 								{@const link = getItemLink(item)}
+								{@const isHighlighted = tierSearch.trim() && title.toLowerCase().includes(tierSearch.trim().toLowerCase())}
+								{@const isDimmed = tierSearch.trim() && !isHighlighted}
 								{@const showPlaceholder = dragItem && dragOverTierId === tier.id && dragOverIndex === idx && dragItem.watchedId !== getWatchedId(item) && !(dragItem.sourceTierId === tier.id && (dragOverIndex === dragItem.sourceIndex || dragOverIndex === dragItem.sourceIndex + 1))}
 								{#if showPlaceholder}
 									<div class="drop-placeholder"></div>
@@ -1578,6 +1768,8 @@
 								<div
 									class="tier-item"
 									class:dragging={dragItem?.watchedId === getWatchedId(item)}
+									class:highlighted={isHighlighted}
+									class:dimmed={isDimmed}
 									draggable={editMode ? "true" : "false"}
 									ondragstart={(e) =>
 										onDragStart(e, getWatchedId(item), tier.id, idx)}
@@ -1621,6 +1813,13 @@
 			<div class="untiered-section" class:collapsed={!overlayExpanded} class:dragging={dragItem !== null}>
 				<div class="untiered-header">
 					<h3>Untiered ({filteredUntiered.length}/{untieredWatched.length})</h3>
+					<div class="untiered-search">
+						<input
+							type="text"
+							placeholder="Search..."
+							bind:value={untieredSearch}
+						/>
+					</div>
 					<div class="untiered-filters">
 						<div class="filter-group">
 							{#each typeFilterLabels as tl}
@@ -1673,7 +1872,7 @@
 									ondragend={onDragEnd}
 									ontouchstart={(e) =>
 										onTouchDragStart(e, getWatchedId(w), null, idx)}
-									oncontextmenu={(e) => handleTierItemContextMenu(e, w)}
+									oncontextmenu={(e) => handleUntieredContextMenu(e, w)}
 									title={title}
 								>
 									<div class="tier-item-poster">
@@ -1687,7 +1886,7 @@
 								</div>
 							{/each}
 						{:else if untieredWatched.length > 0}
-							<div class="untiered-empty">No items match the selected filters</div>
+							<div class="untiered-empty">No items match the selected filters{#if untieredSearch.trim()} or search{/if}</div>
 						{:else}
 							<div class="untiered-empty">All items are in tiers!</div>
 						{/if}
@@ -1956,6 +2155,44 @@
 	/>
 {/if}
 
+{#if tierAssignMenu}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="tier-assign-backdrop" onmousedown={handleTierAssignOutsideClick}></div>
+	<div
+		class="tier-assign-menu"
+		bind:this={tierAssignMenuEl}
+		style="left: {tierAssignMenu.x}px; top: {tierAssignMenu.y}px;"
+	>
+		<div class="tier-assign-header">
+			<span class="tier-assign-title" title={tierAssignMenu.mediaName}>{tierAssignMenu.mediaName}</span>
+			<button class="tier-assign-close" onclick={closeTierAssignMenu}>
+				<Icon i="close" wh={14} />
+			</button>
+		</div>
+		<div class="tier-assign-label">Assign to Tier</div>
+		<div class="tier-assign-list">
+			{#each tiers as tier (tier.id)}
+				<button
+					class="tier-assign-btn"
+					onclick={() => assignToTier(tier.id)}
+				>
+					<span
+						class="tier-assign-color"
+						style="background-color: {tier.color}; color: {tier.textColor};"
+					>{tier.name}</span>
+					<span class="tier-assign-count">{tier.tierItems?.length ?? 0}</span>
+				</button>
+			{/each}
+		</div>
+		<div class="tier-assign-more">
+			<button class="tier-assign-more-btn" onclick={openPosterCtxFromTierAssign}>
+				<Icon i="pencil" wh={13} />
+				<span>Status / Rating / Thoughts</span>
+			</button>
+		</div>
+	</div>
+{/if}
+
 <style lang="scss">
 	.tierlist-page {
 		padding: 24px;
@@ -2123,6 +2360,47 @@
 		}
 	}
 
+	.tier-search-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: 320px;
+		margin: 0 auto 12px;
+		padding: 6px 12px;
+		background: rgba(128, 128, 128, 0.08);
+		border: 1px solid rgba(128, 128, 128, 0.15);
+		border-radius: 8px;
+		fill: rgba(255, 255, 255, 0.4);
+
+		input {
+			flex: 1;
+			background: none;
+			border: none;
+			outline: none;
+			color: $text-color;
+			font-size: 13px;
+			padding: 0;
+
+			&::placeholder {
+				color: rgba(255, 255, 255, 0.3);
+			}
+		}
+	}
+
+	.tier-search-clear {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 2px;
+		fill: rgba(255, 255, 255, 0.4);
+		display: flex;
+		align-items: center;
+
+		&:hover {
+			fill: rgba(255, 255, 255, 0.7);
+		}
+	}
+
 	.tierlist-container {
 		display: flex;
 		flex-direction: column;
@@ -2242,6 +2520,17 @@
 			transform: scale(0.92);
 		}
 
+		&.highlighted {
+			outline: 2px solid rgba(76, 175, 80, 0.8);
+			outline-offset: 1px;
+			border-radius: 6px;
+			z-index: 1;
+		}
+
+		&.dimmed {
+			opacity: 0.2;
+		}
+
 		&:hover {
 			transform: translateY(-3px) scale(1.03);
 
@@ -2353,7 +2642,8 @@
 		}
 
 		&.dragging:not(.collapsed) {
-			opacity: 0.3;
+			opacity: 0.6;
+			pointer-events: auto;
 		}
 
 		h3 {
@@ -2371,6 +2661,28 @@
 		gap: 12px;
 		padding: 10px 20px;
 		user-select: none;
+	}
+
+	.untiered-search {
+		input {
+			width: 140px;
+			padding: 4px 10px;
+			border-radius: 12px;
+			border: 1px solid rgba(128, 128, 128, 0.25);
+			background: rgba(128, 128, 128, 0.06);
+			color: $text-color;
+			font-size: 11px;
+			outline: none;
+			transition: border-color 150ms;
+
+			&:focus {
+				border-color: rgba(128, 128, 128, 0.5);
+			}
+
+			&::placeholder {
+				color: rgba(128, 128, 128, 0.6);
+			}
+		}
 	}
 
 	.untiered-filters {
@@ -3005,6 +3317,154 @@
 
 		.untiered-section h3 {
 			font-size: 12px;
+		}
+	}
+
+	.tier-assign-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 99998;
+		background: transparent;
+	}
+
+	.tier-assign-menu {
+		position: fixed;
+		z-index: 99999;
+		background: $bg-color;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		min-width: 200px;
+		max-width: 280px;
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+		overflow: hidden;
+		font-size: 13px;
+		color: $text-color;
+	}
+
+	.tier-assign-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 10px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.tier-assign-title {
+		flex: 1;
+		font-weight: 600;
+		font-size: 12px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.tier-assign-close {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
+		background: none;
+		border: none;
+		cursor: pointer;
+		fill: $text-color;
+		opacity: 0.5;
+		border-radius: 4px;
+		padding: 0;
+		transition: opacity 150ms;
+
+		:global(svg) {
+			width: 14px;
+			height: 14px;
+		}
+
+		&:hover {
+			opacity: 1;
+		}
+	}
+
+	.tier-assign-label {
+		padding: 6px 10px 4px;
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		opacity: 0.4;
+	}
+
+	.tier-assign-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 2px 6px 8px;
+	}
+
+	.tier-assign-btn {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 6px;
+		border-radius: 5px;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		color: $text-color;
+		transition: background 120ms;
+
+		&:hover {
+			background: rgba(255, 255, 255, 0.08);
+		}
+	}
+
+	.tier-assign-color {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 40px;
+		padding: 3px 10px;
+		border-radius: 4px;
+		font-weight: 700;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+
+	.tier-assign-count {
+		font-size: 11px;
+		opacity: 0.4;
+		margin-left: auto;
+	}
+
+	.tier-assign-more {
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		padding: 4px 6px 6px;
+	}
+
+	.tier-assign-more-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		padding: 5px 8px;
+		border-radius: 5px;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		color: $text-color;
+		fill: $text-color;
+		font-size: 12px;
+		opacity: 0.6;
+		transition: background 120ms, opacity 120ms;
+
+		:global(svg) {
+			width: 13px;
+			height: 13px;
+			flex-shrink: 0;
+		}
+
+		&:hover {
+			background: rgba(255, 255, 255, 0.08);
+			opacity: 1;
 		}
 	}
 </style>

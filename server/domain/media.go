@@ -83,6 +83,10 @@ type Media struct {
 	// details for the server to fetch fully/verify, i.e fetched full details from
 	// tmdb again to verify if show is anime itself, etc).
 	IsShowAnime bool `json:"isShowAnime,omitempty"`
+	// Movie collection info (e.g. "Harry Potter Collection").
+	Collection *MediaCollection `json:"collection,omitempty"`
+	// Movies in the collection.
+	CollectionParts []Media `json:"collectionParts,omitempty"`
 
 	//
 	// Properties only for Games
@@ -116,6 +120,13 @@ type Media struct {
 type RecommendationSource struct {
 	Name   string  `json:"name"`
 	Weight float64 `json:"weight"`
+}
+
+// MediaCollection holds basic info about a movie collection.
+type MediaCollection struct {
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	ExtPosterPath string `json:"extPosterPath,omitempty"`
 }
 
 func (t Media) GetId() int {

@@ -27,6 +27,7 @@
 	import MobilePosterModal from "./MobilePosterModal.svelte";
 	import PosterGestureHUD from "./PosterGestureHUD.svelte";
 	import PosterSocialBadge from "./PosterSocialBadge.svelte";
+	import Icon from "../Icon.svelte";
 
 	interface Props {
 		media: Media;
@@ -449,6 +450,14 @@
 			<!-- Must be on watched list, and poster not hovered -->
 			<ExtraDetails {...buildExtraDetails(meta.type, watched, media.name)} />
 		{/if}
+		{#if ownerWatched?.activity?.length && !posterActive}
+			{@const lastActivity = ownerWatched.activity[ownerWatched.activity.length - 1]}
+			{@const lastDate = lastActivity.customDate || lastActivity.createdAt}
+			<div class="owner-activity-badge" title="{ownerName ? ownerName + ': ' : ''}{ownerWatched.activity.length} activit{ownerWatched.activity.length === 1 ? 'y' : 'ies'}">
+				<Icon i="calendar" wh={11} />
+				<span>{new Date(lastDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })}</span>
+			</div>
+		{/if}
 		<div
 			onclick={(e) => {
 				if (typeof onClick !== "undefined") {
@@ -849,6 +858,30 @@
 				color: white;
 				opacity: 1;
 			}
+		}
+	}
+
+	.owner-activity-badge {
+		position: absolute;
+		bottom: 4px;
+		left: 4px;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.7);
+		backdrop-filter: blur(4px);
+		font-size: 10px;
+		color: rgba(255, 255, 255, 0.85);
+		fill: rgba(255, 255, 255, 0.7);
+		z-index: 2;
+		pointer-events: none;
+
+		:global(svg) {
+			width: 11px;
+			height: 11px;
+			flex-shrink: 0;
 		}
 	}
 </style>

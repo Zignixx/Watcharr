@@ -3,14 +3,18 @@
 		type WatchedStatus,
 		type Watched,
 		type SupportedMedia,
+		type Media,
 	} from "@/types";
 	import { updateWatched, removeWatched } from "../util/api";
-	import { notify } from "../util/notify";
 	import Icon from "../Icon.svelte";
 	import { watchedStatuses, toUnderstandableStatus } from "../util/helpers";
 	import Rating from "../rating/Rating.svelte";
 	import { toShowableRating } from "../rating/helpers";
 	import { onMount, onDestroy } from "svelte";
+	import { goto } from "$app/navigation";
+	import axios from "axios";
+	import SpinnerTiny from "../SpinnerTiny.svelte";
+	import { store } from "@/store.svelte";
 
 	interface Props {
 		x: number;
@@ -43,6 +47,14 @@
 	let thoughtsText = $state(watched?.thoughts ?? "");
 	let textarea: HTMLTextAreaElement | undefined = $state();
 	let saving = $state(false);
+
+	// Similar items state
+	let similarItems: Media[] = $state([]);
+	let similarLoading = $state(false);
+	let similarExpanded = $state(false);
+
+	// Similar item inline saving state (keyed by tmdbId)
+	let similarSavingId: number | null = $state(null);
 
 	// Position the menu within viewport bounds
 	let menuX = $state(x);
@@ -117,7 +129,6 @@
 		}
 		saving = true;
 		try {
-			// If item is not on the list yet, add it first
 			let w = watched;
 			if (!w?.id) {
 				w = await updateWatched(undefined, {
@@ -149,6 +160,70 @@
 	$effect(() => {
 		if (textarea) resizeTextarea();
 	});
+
+	async function fetchSimilar() {
+		if (similarLoading || similarItems.length > 0) return;
+		if (contentType !== "movie" && contentType !== "tv") return;
+		similarLoading = true;
+		try {
+			const resp = (await axios.get(`/content/${contentType}/${contentId}`, {
+				params: { region: store.userSettings?.country },
+			})).data as Media;
+			if (resp?.similar) {
+				similarItems = resp.similar.slice(0, 6);
+			}
+		} catch {
+			// Silently fail - similar items are not critical
+		}
+		similarLoading = false;
+	}
+
+	function handleSimilarClick(item: Media) {
+		onClose();
+		const id = item.ids?.tmdb;
+		if (id) {
+			const type = item.type === "tmdb_movie" ? "movie" : item.type === "tmdb_tv" ? "tv" : contentType;
+			goto(`/${type}/${id}`);
+		}
+	}
+
+	async function handleSimilarStatusChange(item: Media, status: WatchedStatus, e?: MouseEvent) {
+		if (e) e.stopPropagation();
+		const id = item.ids?.tmdb;
+		if (!id) return;
+		const type = item.type === "tmdb_movie" ? "movie" : item.type === "tmdb_tv" ? "tv" : contentType;
+		similarSavingId = id;
+		try {
+			const w = await updateWatched(item.watched?.id ? item.watched : undefined, {
+				contentId: id,
+				contentType: type as SupportedMedia,
+				status,
+			});
+			const idx = similarItems.findIndex(s => s.ids?.tmdb === id);
+			if (idx !== -1) {
+				similarItems[idx] = { ...similarItems[idx], watched: w };
+			}
+		} catch {}
+		similarSavingId = null;
+	}
+
+	async function handleSimilarRemove(item: Media, e: MouseEvent) {
+		e.stopPropagation();
+		if (!item.watched?.id) return;
+		const id = item.ids?.tmdb;
+		if (!id) return;
+		similarSavingId = id;
+		try {
+			const removed = await removeWatched(item.watched.id);
+			if (removed) {
+				const idx = similarItems.findIndex(s => s.ids?.tmdb === id);
+				if (idx !== -1) {
+					similarItems[idx] = { ...similarItems[idx], watched: undefined };
+				}
+			}
+		} catch {}
+		similarSavingId = null;
+	}
 </script>
 
 <div class="ctx-backdrop" role="presentation"></div>
@@ -261,6 +336,84 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Similar Items Section -->
+	{#if (contentType === "movie" || contentType === "tv")}
+		<div class="ctx-section ctx-similar-section">
+			{#if !similarExpanded}
+				<button
+					class="ctx-thoughts-btn"
+					onclick={() => { similarExpanded = true; fetchSimilar(); }}
+				>
+					<Icon i="sparkles" wh={16} />
+					<span>Similar</span>
+				</button>
+			{:else}
+				<span class="ctx-label">Similar</span>
+				{#if similarLoading}
+					<div class="ctx-similar-loading">
+						<SpinnerTiny />
+					</div>
+				{:else if similarItems.length > 0}
+					<div class="ctx-similar-list">
+						{#each similarItems as item}
+							{@const isSaving = similarSavingId === item.ids?.tmdb}
+							<div class="ctx-similar-item">
+								<button
+									class="ctx-similar-item-main"
+									onclick={() => handleSimilarClick(item)}
+									title={item.name}
+								>
+									{#if item.extPosterPath}
+										<img
+											src={"https://image.tmdb.org/t/p/w92" + item.extPosterPath}
+											alt={item.name}
+											class="ctx-similar-poster"
+										/>
+									{:else}
+										<div class="ctx-similar-poster ctx-similar-no-poster">?</div>
+									{/if}
+									<div class="ctx-similar-info">
+										<span class="ctx-similar-name">{item.name}</span>
+										{#if item.releaseDate}
+											<span class="ctx-similar-year">{new Date(item.releaseDate).getFullYear()}</span>
+										{/if}
+									</div>
+								</button>
+								<div class="ctx-similar-statuses">
+									{#each Object.entries(watchedStatuses) as [statusName, icon]}
+										<button
+											class="ctx-similar-status-btn"
+											class:active={item.watched?.status === statusName}
+											onclick={(e) => handleSimilarStatusChange(item, statusName as WatchedStatus, e)}
+											disabled={isSaving}
+											title={toUnderstandableStatus(statusName as WatchedStatus, false)}
+										>
+											<Icon i={icon} wh={13} />
+											<span>{toUnderstandableStatus(statusName as WatchedStatus, false)}</span>
+										</button>
+									{/each}
+									{#if item.watched?.id}
+										<button
+											class="ctx-similar-status-btn delete"
+											onclick={(e) => handleSimilarRemove(item, e)}
+											disabled={isSaving}
+											title="Remove"
+										>
+											<Icon i="trash" wh={13} />
+											<span>remove</span>
+										</button>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<span class="ctx-similar-empty">No similar items found.</span>
+				{/if}
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style lang="scss">
@@ -567,5 +720,155 @@
 			gap: 6px;
 			justify-content: flex-end;
 		}
+	}
+
+	.ctx-similar-section {
+		max-height: 250px;
+		overflow-y: auto;
+	}
+
+	.ctx-similar-loading {
+		display: flex;
+		justify-content: center;
+		padding: 8px 0;
+	}
+
+	.ctx-similar-list {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.ctx-similar-item {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 6px 8px;
+		border-radius: 6px;
+		transition: background 150ms;
+
+		&:hover {
+			background: rgba(255, 255, 255, 0.06);
+		}
+	}
+
+	.ctx-similar-item-main {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: $text-color;
+		padding: 0;
+		text-align: left;
+		width: 100%;
+	}
+
+	.ctx-similar-poster {
+		width: 32px;
+		height: 48px;
+		border-radius: 3px;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.ctx-similar-no-poster {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.08);
+		font-size: 14px;
+		opacity: 0.4;
+	}
+
+	.ctx-similar-info {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.ctx-similar-name {
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.ctx-similar-year {
+		font-size: 11px;
+		opacity: 0.5;
+	}
+
+	.ctx-similar-statuses {
+		display: flex;
+		gap: 3px;
+	}
+
+	.ctx-similar-status-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: 1;
+		gap: 3px;
+		padding: 3px 4px;
+		border-radius: 4px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.03);
+		cursor: pointer;
+		fill: rgba(255, 255, 255, 0.4);
+		color: rgba(255, 255, 255, 0.4);
+		font-size: 10px;
+		text-transform: capitalize;
+		white-space: nowrap;
+		transition: background 150ms, fill 150ms, color 150ms, border-color 150ms;
+
+		:global(svg) {
+			width: 13px;
+			height: 13px;
+			flex-shrink: 0;
+		}
+
+		&:hover:not(:disabled) {
+			background: rgba(255, 255, 255, 0.12);
+			fill: rgba(255, 255, 255, 0.8);
+			color: rgba(255, 255, 255, 0.8);
+			border-color: rgba(255, 255, 255, 0.15);
+		}
+
+		&.active {
+			background: rgba(76, 175, 80, 0.2);
+			fill: rgba(76, 175, 80, 0.9);
+			color: rgba(76, 175, 80, 0.9);
+			border-color: rgba(76, 175, 80, 0.4);
+		}
+
+		&.delete {
+			fill: rgba(255, 255, 255, 0.3);
+			color: rgba(255, 255, 255, 0.3);
+
+			&:hover:not(:disabled) {
+				fill: rgba(244, 67, 54, 0.8);
+				color: rgba(244, 67, 54, 0.8);
+				background: rgba(244, 67, 54, 0.1);
+				border-color: rgba(244, 67, 54, 0.3);
+			}
+		}
+
+		&:disabled {
+			opacity: 0.4;
+			cursor: not-allowed;
+		}
+	}
+
+	.ctx-similar-empty {
+		display: block;
+		text-align: center;
+		font-size: 12px;
+		opacity: 0.4;
+		padding: 6px 0;
 	}
 </style>
