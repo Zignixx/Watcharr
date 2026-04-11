@@ -726,6 +726,7 @@
 	.view-tabs {
 		display: flex;
 		justify-content: center;
+		margin-bottom: 12px;
 	}
 
 	.compact-stats {
@@ -815,7 +816,7 @@
 		display: flex;
 		justify-content: center;
 		gap: 4px;
-		margin: 0 20px 16px;
+		margin: 8px 20px 16px;
 		flex-wrap: wrap;
 	}
 

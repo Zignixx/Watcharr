@@ -257,6 +257,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		margin-top: 12px;
 		margin-bottom: 12px;
 		padding: 8px 12px;
 		border-radius: 6px;
