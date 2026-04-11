@@ -44,6 +44,15 @@
 	// Tierlist search (highlight matching items)
 	let tierSearch = $state("");
 
+	// Poster grid search
+	let posterSearch = $state("");
+	let filteredPosters = $derived.by(() => {
+		if (!dataLoader.state.data?.length) return [];
+		if (!posterSearch.trim()) return dataLoader.state.data;
+		const q = posterSearch.trim().toLowerCase();
+		return dataLoader.state.data.filter((m: Media) => m.name?.toLowerCase().includes(q));
+	});
+
 	// Public profile stats
 	let publicProfile: Profile | undefined = $state();
 	let profileLoading = $state(false);
@@ -551,9 +560,18 @@
 		</div>
 	{/if}
 {:else}
+	{#if dataLoader.state.data?.length > 0}
+		<div class="tier-search-bar">
+			<Icon i="search" wh={14} />
+			<input type="text" placeholder="Search in list..." bind:value={posterSearch} />
+			{#if posterSearch}
+				<button class="plain tier-search-clear" onclick={() => posterSearch = ""}>✕</button>
+			{/if}
+		</div>
+	{/if}
 	<PosterList>
-		{#if dataLoader.state.data?.length > 0}
-			{#each dataLoader.state.data as w, i (`${i}-${w.type}`)}
+		{#if filteredPosters.length > 0}
+			{#each filteredPosters as w, i (`${i}-${w.type}`)}
 				{#if w}
 					<Poster
 						watched={getMyWatched(w)}
@@ -569,8 +587,8 @@
 		{:else if !dataLoader.state.reqLoading && !dataLoader.state.reqLoadError}
 			<div class="empty-list">
 				<Icon i={store.hasActiveFilters ? "filter-circle" : "reel"} wh={80} />
-				<h2 class="norm">This list is empty!</h2>
-				<h4 class="norm">Come back later to see if they have added anything.</h4>
+				<h2 class="norm">{posterSearch ? "No matches found" : "This list is empty!"}</h2>
+				<h4 class="norm">{posterSearch ? "Try a different search term." : "Come back later to see if they have added anything."}</h4>
 				{#if store.hasActiveFilters}
 					<button onclick={() => clearActiveFilters()}>Clear Filters</button>
 				{/if}
@@ -837,7 +855,7 @@
 		align-items: center;
 		gap: 8px;
 		max-width: 320px;
-		margin: 0 auto 12px;
+		margin: 12px auto 12px;
 		padding: 6px 12px;
 		background: rgba(128, 128, 128, 0.08);
 		border: 1px solid rgba(128, 128, 128, 0.15);

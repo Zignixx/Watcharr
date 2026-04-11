@@ -2365,7 +2365,7 @@
 		align-items: center;
 		gap: 8px;
 		max-width: 320px;
-		margin: 0 auto 12px;
+		margin: 12px auto 12px;
 		padding: 6px 12px;
 		background: rgba(128, 128, 128, 0.08);
 		border: 1px solid rgba(128, 128, 128, 0.15);
